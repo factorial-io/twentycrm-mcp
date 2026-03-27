@@ -31,8 +31,9 @@
 
 ## Notes
 
-- All items pass validation. Spec is ready for `/speckit.clarify` or `/speckit.plan`.
-- "stdio transport" in FR-025 and "OAuth OIDC" / "API token" in FR-001/FR-002 refer to protocol-level standards, not implementation details.
-- Two-layer auth model: OAuth OIDC from MCP client for user identity + email whitelist, API token for TwentyCRM API access.
-- Scope: 4 entities (companies, contacts, opportunities, tasks), 3 operation types (search/view, create, update). Delete is out of scope for v1.
-- Updated 2026-03-27 to reflect auth model (OAuth OIDC + API token + whitelist) and addition of create operations.
+- All items pass validation. Spec is ready for `/speckit.plan`.
+- Clarification session (2026-03-27) resolved 5 ambiguities: deployment model, API token scope, tool granularity, field exposure, whitelist config.
+- Two-layer auth: OAuth OIDC from MCP client for user identity + email whitelist (env var), shared API token for TwentyCRM API access.
+- Remote hosted server with streamable HTTP transport.
+- 16 fine-grained MCP tools (one per operation per entity), configurable field selection.
+- Scope: 4 entities, 4 operations (search, view, create, update). Delete out of scope for v1.

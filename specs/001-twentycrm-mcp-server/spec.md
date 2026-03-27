@@ -13,6 +13,7 @@
 - Q: Shared API token scope — single workspace, per-user tokens, or multi-tenant? → A: Single shared workspace — one API token, all whitelisted users see the same data
 - Q: MCP tool granularity — fine-grained (16 tools), per-entity (4), or per-operation (4)? → A: Fine-grained — one tool per operation per entity (16 tools total)
 - Q: Field exposure strategy — all fields always, summary for search / full for view, or configurable? → A: Configurable — users can specify which fields to return via a parameter
+- Q: Whitelist configuration method — env var, config file, or domain-based? → A: Environment variable — comma-separated list of allowed emails
 
 ## User Scenarios & Testing
 
@@ -152,7 +153,7 @@ A user wants to review their CRM tasks — follow-ups, action items, and reminde
 
 ### Functional Requirements
 
-- **FR-001**: System MUST verify user identity via OAuth OIDC provided by the MCP client (e.g., claude.ai) and check the user's email against a configurable whitelist of allowed email addresses
+- **FR-001**: System MUST verify user identity via OAuth OIDC provided by the MCP client (e.g., claude.ai) and check the user's email against a whitelist of allowed email addresses configured via environment variable
 - **FR-002**: System MUST authenticate with the TwentyCRM API using a single pre-configured API token shared across all whitelisted users, providing access to one TwentyCRM workspace
 - **FR-003**: System MUST deny access to users whose email is not on the whitelist, returning a clear authorization error
 - **FR-004**: System MUST expose CRM operations as MCP tools following the Model Context Protocol specification
@@ -203,7 +204,7 @@ A user wants to review their CRM tasks — follow-ups, action items, and reminde
 
 - Users have an active TwentyCRM workspace with API access enabled
 - A single TwentyCRM API token has been pre-configured for the MCP server by an administrator; all whitelisted users share access to the same workspace
-- A whitelist of allowed user email addresses is configured on the MCP server
+- The whitelist of allowed user email addresses is configured via an environment variable (comma-separated list)
 - The MCP client (e.g., claude.ai) supports OAuth OIDC and provides verified user email to the MCP server
 - The MCP client supports the MCP protocol and streamable HTTP transport for remote servers
 - The TwentyCRM REST API is available and follows the documented OpenAPI specification
