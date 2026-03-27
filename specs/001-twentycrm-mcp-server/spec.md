@@ -11,6 +11,7 @@
 
 - Q: Deployment & transport model — stdio (local) or streamable HTTP (remote hosted)? → A: Remote hosted server with streamable HTTP transport
 - Q: Shared API token scope — single workspace, per-user tokens, or multi-tenant? → A: Single shared workspace — one API token, all whitelisted users see the same data
+- Q: MCP tool granularity — fine-grained (16 tools), per-entity (4), or per-operation (4)? → A: Fine-grained — one tool per operation per entity (16 tools total)
 
 ## User Scenarios & Testing
 
@@ -173,7 +174,7 @@ A user wants to review their CRM tasks — follow-ups, action items, and reminde
 - **FR-021**: System MUST support cursor-based pagination for all search/list operations
 - **FR-022**: System MUST support ordering/sorting results by standard fields (e.g., createdAt, name, updatedAt)
 - **FR-023**: System MUST return clear, human-readable error messages for authentication failures, authorization denials, validation errors, not-found conditions, and connectivity issues
-- **FR-024**: System MUST expose tool descriptions and parameter schemas so MCP clients can present available operations to users
+- **FR-024**: System MUST expose one dedicated tool per operation per entity (16 tools total: search, view, create, update for each of companies, contacts, opportunities, tasks), each with its own description and parameter schema
 - **FR-025**: System MUST communicate over streamable HTTP transport as the primary MCP transport mechanism, suitable for remote hosted deployment
 
 ### Key Entities
