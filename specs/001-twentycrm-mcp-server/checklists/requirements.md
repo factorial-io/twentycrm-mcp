@@ -32,6 +32,7 @@
 ## Notes
 
 - All items pass validation. Spec is ready for `/speckit.clarify` or `/speckit.plan`.
-- "stdio transport" in FR-019 refers to the communication mechanism (part of the MCP protocol spec), not an implementation detail.
-- Scope explicitly limited to 4 entities (companies, contacts, opportunities, tasks) and 3 operations (search, view, update). Create/delete and additional entities are out of scope for v1.
-- Updated 2026-03-27 to reflect refined feature description narrowing scope from full CRUD on 5 entities to search/view/update on 4 entities.
+- "stdio transport" in FR-025 and "OAuth OIDC" / "API token" in FR-001/FR-002 refer to protocol-level standards, not implementation details.
+- Two-layer auth model: OAuth OIDC from MCP client for user identity + email whitelist, API token for TwentyCRM API access.
+- Scope: 4 entities (companies, contacts, opportunities, tasks), 3 operation types (search/view, create, update). Delete is out of scope for v1.
+- Updated 2026-03-27 to reflect auth model (OAuth OIDC + API token + whitelist) and addition of create operations.
