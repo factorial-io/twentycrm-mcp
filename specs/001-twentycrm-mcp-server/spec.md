@@ -10,6 +10,7 @@
 ### Session 2026-03-27
 
 - Q: Deployment & transport model — stdio (local) or streamable HTTP (remote hosted)? → A: Remote hosted server with streamable HTTP transport
+- Q: Shared API token scope — single workspace, per-user tokens, or multi-tenant? → A: Single shared workspace — one API token, all whitelisted users see the same data
 
 ## User Scenarios & Testing
 
@@ -150,7 +151,7 @@ A user wants to review their CRM tasks — follow-ups, action items, and reminde
 ### Functional Requirements
 
 - **FR-001**: System MUST verify user identity via OAuth OIDC provided by the MCP client (e.g., claude.ai) and check the user's email against a configurable whitelist of allowed email addresses
-- **FR-002**: System MUST authenticate with the TwentyCRM API using a pre-configured API token
+- **FR-002**: System MUST authenticate with the TwentyCRM API using a single pre-configured API token shared across all whitelisted users, providing access to one TwentyCRM workspace
 - **FR-003**: System MUST deny access to users whose email is not on the whitelist, returning a clear authorization error
 - **FR-004**: System MUST expose CRM operations as MCP tools following the Model Context Protocol specification
 - **FR-005**: System MUST support searching companies by name, domain, and other key attributes
@@ -198,7 +199,7 @@ A user wants to review their CRM tasks — follow-ups, action items, and reminde
 ## Assumptions
 
 - Users have an active TwentyCRM workspace with API access enabled
-- A TwentyCRM API token has been pre-configured for the MCP server by an administrator
+- A single TwentyCRM API token has been pre-configured for the MCP server by an administrator; all whitelisted users share access to the same workspace
 - A whitelist of allowed user email addresses is configured on the MCP server
 - The MCP client (e.g., claude.ai) supports OAuth OIDC and provides verified user email to the MCP server
 - The MCP client supports the MCP protocol and streamable HTTP transport for remote servers
