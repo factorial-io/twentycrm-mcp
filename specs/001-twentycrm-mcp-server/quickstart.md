@@ -8,6 +8,7 @@
 - Node.js 20+
 - A TwentyCRM workspace with API access
 - A TwentyCRM API token (generated from Settings → Playground in TwentyCRM)
+- An Auth0 tenant (or other OIDC provider supporting Dynamic Client Registration)
 
 ## Environment Variables
 
@@ -16,6 +17,8 @@
 | `TWENTYCRM_API_TOKEN` | Yes | Bearer token for TwentyCRM REST API |
 | `TWENTYCRM_API_URL` | No | API base URL (default: `https://api.twenty.com/rest`) |
 | `ALLOWED_EMAILS` | Yes | Comma-separated list of authorized user emails |
+| `AUTH_ISSUER` | Yes | OIDC provider issuer URL (e.g., `https://your-tenant.auth0.com`) |
+| `AUTH_AUDIENCE` | Yes | OAuth audience / resource identifier |
 | `PORT` | No | Server port (default: 3000) |
 
 ## Setup
