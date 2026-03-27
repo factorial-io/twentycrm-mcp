@@ -5,6 +5,12 @@
 **Status**: Draft
 **Input**: User description: "The TwentyCRM MCP server should expose the most important endpoints of the TwentyCRM API via MCP. The user should be able to search for contacts, companies, opportunities, tasks, view their respective details and update the information. Auth against TwentyCRM via API token. App access controlled by a whitelist of allowed email addresses verified via OAuth OIDC from the MCP client. Create operations included, delete out of scope."
 
+## Clarifications
+
+### Session 2026-03-27
+
+- Q: Deployment & transport model — stdio (local) or streamable HTTP (remote hosted)? → A: Remote hosted server with streamable HTTP transport
+
 ## User Scenarios & Testing
 
 ### User Story 1 - Authentication and Tool Discovery (Priority: P1)
@@ -167,7 +173,7 @@ A user wants to review their CRM tasks — follow-ups, action items, and reminde
 - **FR-022**: System MUST support ordering/sorting results by standard fields (e.g., createdAt, name, updatedAt)
 - **FR-023**: System MUST return clear, human-readable error messages for authentication failures, authorization denials, validation errors, not-found conditions, and connectivity issues
 - **FR-024**: System MUST expose tool descriptions and parameter schemas so MCP clients can present available operations to users
-- **FR-025**: System MUST communicate over stdio transport as the primary MCP transport mechanism
+- **FR-025**: System MUST communicate over streamable HTTP transport as the primary MCP transport mechanism, suitable for remote hosted deployment
 
 ### Key Entities
 
@@ -195,10 +201,10 @@ A user wants to review their CRM tasks — follow-ups, action items, and reminde
 - A TwentyCRM API token has been pre-configured for the MCP server by an administrator
 - A whitelist of allowed user email addresses is configured on the MCP server
 - The MCP client (e.g., claude.ai) supports OAuth OIDC and provides verified user email to the MCP server
-- The MCP client supports the MCP protocol and stdio transport
+- The MCP client supports the MCP protocol and streamable HTTP transport for remote servers
 - The TwentyCRM REST API is available and follows the documented OpenAPI specification
 - The initial release focuses on four core entities: companies, contacts, opportunities, and tasks. Additional entities (notes, workflows, calendar events, messages, etc.) are out of scope for v1
 - The server supports search, view, create, and update operations. Delete operations are out of scope for v1
-- The server runs locally on the user's machine, connecting to TwentyCRM's cloud API
+- The server is deployed as a remote hosted service, accessible by MCP clients over streamable HTTP
 - Rate limits imposed by TwentyCRM are handled with informative user-facing messages, not automatic retries
 - Users have appropriate permissions in TwentyCRM to read, create, and update the records they interact with
