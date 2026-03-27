@@ -10,7 +10,7 @@ Build a remote MCP server that exposes TwentyCRM CRM operations as 16 MCP tools 
 ## Technical Context
 
 **Language/Version**: TypeScript 5.x on Node.js 20+
-**Primary Dependencies**: `@modelcontextprotocol/sdk`, `@modelcontextprotocol/express`, `express`, `zod`
+**Primary Dependencies**: `@modelcontextprotocol/sdk`, `@modelcontextprotocol/express`, `express`, `zod`, `mcp-auth`
 **Storage**: N/A (stateless proxy to TwentyCRM API)
 **Testing**: Vitest
 **Target Platform**: Linux server (remote hosted, accessible via streamable HTTP)

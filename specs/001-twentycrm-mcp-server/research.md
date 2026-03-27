@@ -36,18 +36,36 @@
 
 ## Decision 4: Authentication Architecture
 
-**Decision**: OAuth OIDC via MCP SDK `requireBearerAuth` middleware + email whitelist check
-**Rationale**: The MCP SDK provides built-in `requireBearerAuth` middleware that verifies tokens and extracts user identity. The `authInfo` object is available in tool handler contexts. The server checks the verified email against the whitelist configured via environment variable. The TwentyCRM API token is stored server-side as an environment variable.
+**Decision**: `mcp-auth` library for OAuth OIDC bearer token verification + email whitelist check
+**Rationale**: The `mcp-auth` library (v0.1.1) provides plug-and-play OAuth/OIDC bearer token validation purpose-built for MCP servers. It handles JWT verification, serves the required Protected Resource Metadata endpoint (RFC 9728), and populates `authInfo` on each request. The server then checks the verified email from `authInfo.claims.email` against the whitelist. Claude.ai requires Dynamic Client Registration (RFC 7591), which Auth0 supports.
 **Alternatives considered**:
-- Custom middleware (unnecessary when SDK provides built-in auth support)
-- `mcp-auth` library (adds dependency; SDK built-ins sufficient for email whitelist pattern)
+- SDK built-in `requireBearerAuth` (lower-level, requires manual metadata endpoint setup)
+- `jose` library directly (more manual JWT verification work)
+- `@civic/auth-mcp` (zero-config but less control)
 
 **Auth flow**:
-1. MCP client (claude.ai) authenticates user via OAuth OIDC
-2. Client sends bearer token with each request
-3. `requireBearerAuth` middleware verifies token, extracts user identity
-4. Server checks user email from `authInfo` against `ALLOWED_EMAILS` env var
-5. Server makes TwentyCRM API calls using `TWENTYCRM_API_TOKEN` env var
+1. User adds MCP server URL in claude.ai
+2. Server returns HTTP 401 with `WWW-Authenticate` header on first request
+3. Claude discovers auth server via `/.well-known/oauth-protected-resource` (RFC 9728)
+4. Claude performs Dynamic Client Registration (RFC 7591) with OIDC provider (Auth0)
+5. User authenticates in browser via OIDC provider
+6. Claude exchanges auth code for access token (OAuth 2.1 + PKCE)
+7. Claude sends subsequent requests with `Authorization: Bearer <token>`
+8. `mcp-auth` middleware verifies token, extracts claims into `authInfo`
+9. Server checks `authInfo.claims.email` against `ALLOWED_EMAILS` env var
+10. Server makes TwentyCRM API calls using `TWENTYCRM_API_TOKEN` env var
+
+**Required endpoints**:
+- `/.well-known/oauth-protected-resource` — Protected Resource Metadata (served by `mcp-auth`)
+- `/mcp` — Streamable HTTP MCP endpoint (POST + GET)
+
+**OIDC provider**: Auth0 (supports Dynamic Client Registration required by claude.ai)
+
+**Additional env vars for auth**:
+| Variable | Purpose |
+|----------|---------|
+| `AUTH_ISSUER` | OIDC provider issuer URL (e.g., `https://your-tenant.auth0.com`) |
+| `AUTH_AUDIENCE` | OAuth audience / resource identifier |
 
 ## Decision 5: TwentyCRM API Client
 
@@ -59,11 +77,15 @@
 
 ## Decision 6: Testing Framework
 
-**Decision**: Vitest
-**Rationale**: Fast, TypeScript-native, compatible with Node.js. Supports mocking for HTTP calls to TwentyCRM API. Works well for both unit tests (tool handlers, auth logic) and integration tests (MCP protocol compliance).
+**Decision**: Vitest with MCP SDK `InMemoryTransport` for integration tests
+**Rationale**: Vitest is fast, TypeScript-native, and has native ESM support. The MCP SDK provides `InMemoryTransport` which allows testing the full MCP server in-process without spawning HTTP servers — client and server connect via linked transport pairs.
 **Alternatives considered**:
-- Jest (heavier, requires more configuration for TypeScript)
+- Jest (heavier, requires more configuration for TypeScript and ESM)
 - Node.js built-in test runner (less ecosystem support for mocking)
+
+**Testing approach**:
+- **Unit tests**: Mock TwentyCRM API client, test each tool handler's parameter validation, response formatting, error handling. Test whitelist logic independently.
+- **Integration tests**: Use `InMemoryTransport.createLinkedPair()` to connect an MCP Client to the server in-process. Test tool listing, tool execution, auth rejection, error responses without HTTP.
 
 ## Decision 7: Project Structure
 
@@ -94,6 +116,8 @@ src/
 | `TWENTYCRM_API_TOKEN` | Bearer token for TwentyCRM API |
 | `TWENTYCRM_API_URL` | TwentyCRM API base URL (default: `https://api.twenty.com/rest`) |
 | `ALLOWED_EMAILS` | Comma-separated list of whitelisted user emails |
+| `AUTH_ISSUER` | OIDC provider issuer URL (e.g., `https://your-tenant.auth0.com`) |
+| `AUTH_AUDIENCE` | OAuth audience / resource identifier |
 | `PORT` | Server port (default: 3000) |
 
 ## Decision 9: Stateless vs Stateful Transport
