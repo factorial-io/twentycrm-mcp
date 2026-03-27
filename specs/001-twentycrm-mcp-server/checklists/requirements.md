@@ -32,5 +32,6 @@
 ## Notes
 
 - All items pass validation. Spec is ready for `/speckit.clarify` or `/speckit.plan`.
-- "stdio transport" in FR-013 refers to the communication mechanism, which is a protocol-level concern (part of the MCP spec), not an implementation detail.
-- The spec intentionally scopes v1 to 5 core entities; additional entities are documented as out-of-scope in Assumptions.
+- "stdio transport" in FR-019 refers to the communication mechanism (part of the MCP protocol spec), not an implementation detail.
+- Scope explicitly limited to 4 entities (companies, contacts, opportunities, tasks) and 3 operations (search, view, update). Create/delete and additional entities are out of scope for v1.
+- Updated 2026-03-27 to reflect refined feature description narrowing scope from full CRUD on 5 entities to search/view/update on 4 entities.
