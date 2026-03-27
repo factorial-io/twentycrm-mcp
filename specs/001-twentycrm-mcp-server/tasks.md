@@ -14,10 +14,10 @@
 
 **Purpose**: Project initialization, Cargo.toml, and scaffolding
 
-- [ ] T001 Initialize Rust project with `cargo init`, configure Cargo.toml with all dependencies from plan.md (axum 0.8, rmcp 1.2.0, openidconnect 3.5.0, reqwest, redis, serde, schemars, thiserror, anyhow, tracing, etc.)
-- [ ] T002 [P] Create .env.example with all environment variables (TWENTYCRM_API_TOKEN, TWENTYCRM_API_URL, ALLOWED_EMAILS, OIDC_ISSUER_URL, OIDC_CLIENT_ID, OIDC_CLIENT_SECRET, BASE_URL, REDIS_URL, ENCRYPTION_KEY, BIND_ADDR, RUST_LOG)
-- [ ] T003 [P] Create Dockerfile and docker-compose.yml / docker-compose.dev.yml following imap-mcp patterns
-- [ ] T004 [P] Create src/main.rs with env_var()/env_var_or() helpers, tracing setup, and Tokio runtime bootstrap (adapted from imap-mcp main.rs)
+- [x] T001 Initialize Rust project with `cargo init`, configure Cargo.toml with all dependencies from plan.md (axum 0.8, rmcp 1.2.0, openidconnect 3.5.0, reqwest, redis, serde, schemars, thiserror, anyhow, tracing, etc.)
+- [x] T002 [P] Create .env.example with all environment variables (TWENTYCRM_API_TOKEN, TWENTYCRM_API_URL, ALLOWED_EMAILS, OIDC_ISSUER_URL, OIDC_CLIENT_ID, OIDC_CLIENT_SECRET, BASE_URL, REDIS_URL, ENCRYPTION_KEY, BIND_ADDR, RUST_LOG)
+- [x] T003 [P] Create Dockerfile and docker-compose.yml / docker-compose.dev.yml following imap-mcp patterns
+- [x] T004 [P] Create src/main.rs with env_var()/env_var_or() helpers, tracing setup, and Tokio runtime bootstrap (adapted from imap-mcp main.rs)
 
 ---
 
@@ -27,13 +27,13 @@
 
 **⚠️ CRITICAL**: No user story work can begin until this phase is complete
 
-- [ ] T005 Implement AppError enum in src/error.rs with variants: Redis, Auth, SessionNotFound, TwentyCrmApi, NotFound, Validation, Encryption, Internal — each mapped to HTTP status codes, using thiserror (adapted from imap-mcp error.rs)
-- [ ] T006 [P] Implement Redis session storage with AES-256-GCM encryption in src/session.rs — session create, get, delete, TTL refresh (adapted from imap-mcp session.rs)
-- [ ] T007 [P] Implement OAuth/OIDC flow in src/auth.rs — well-known endpoints (oauth-protected-resource, oauth-authorization-server), dynamic client registration (POST /register), login initiation (GET /auth/login with PKCE S256), callback handler (GET /auth/callback with email whitelist check), token exchange (POST /auth/token) (adapted from imap-mcp auth.rs)
-- [ ] T008 [P] Define shared types in src/types.rs — Company, Person, Opportunity, Task entity structs with serde Deserialize, API response wrapper (ListResponse with data + pageInfo), common tool parameter structs (SearchParams, PaginationParams) with schemars JsonSchema derive
-- [ ] T009 Implement TwentyCRM REST API client in src/twentycrm.rs — TwentyCrmClient struct with reqwest::Client, base_url, api_token; methods: search(entity, filter, order_by, limit, cursor, fields), get(entity, id, fields), create(entity, body), update(entity, id, body); filter/pagination/ordering query string builders; error mapping from HTTP status codes to AppError
-- [ ] T010 Implement AppState, build_router(), and mcp_handler in src/lib.rs — AppState holding OIDC client, Redis pool, encryption key, TwentyCrmClient, allowed_emails; build_router() mounting auth routes + MCP endpoint at /mcp and /mcp/{path} via axum::routing::any(); mcp_handler extracting bearer token, looking up session in Redis, creating per-request TwentyCrmMcpServer, delegating to StreamableHttpService (adapted from imap-mcp lib.rs)
-- [ ] T011 Wire main.rs to call build_router() and start Axum server on BIND_ADDR in src/main.rs — construct AppState from env vars, initialize OIDC client, connect Redis, create TwentyCrmClient, bind and serve
+- [x] T005 Implement AppError enum in src/error.rs with variants: Redis, Auth, SessionNotFound, TwentyCrmApi, NotFound, Validation, Encryption, Internal — each mapped to HTTP status codes, using thiserror (adapted from imap-mcp error.rs)
+- [x] T006 [P] Implement Redis session storage with AES-256-GCM encryption in src/session.rs — session create, get, delete, TTL refresh (adapted from imap-mcp session.rs)
+- [x] T007 [P] Implement OAuth/OIDC flow in src/auth.rs — well-known endpoints (oauth-protected-resource, oauth-authorization-server), dynamic client registration (POST /register), login initiation (GET /auth/login with PKCE S256), callback handler (GET /auth/callback with email whitelist check), token exchange (POST /auth/token) (adapted from imap-mcp auth.rs)
+- [x] T008 [P] Define shared types in src/types.rs — Company, Person, Opportunity, Task entity structs with serde Deserialize, API response wrapper (ListResponse with data + pageInfo), common tool parameter structs (SearchParams, PaginationParams) with schemars JsonSchema derive
+- [x] T009 Implement TwentyCRM REST API client in src/twentycrm.rs — TwentyCrmClient struct with reqwest::Client, base_url, api_token; methods: search(entity, filter, order_by, limit, cursor, fields), get(entity, id, fields), create(entity, body), update(entity, id, body); filter/pagination/ordering query string builders; error mapping from HTTP status codes to AppError
+- [x] T010 Implement AppState, build_router(), and mcp_handler in src/lib.rs — AppState holding OIDC client, Redis pool, encryption key, TwentyCrmClient, allowed_emails; build_router() mounting auth routes + MCP endpoint at /mcp and /mcp/{path} via axum::routing::any(); mcp_handler extracting bearer token, looking up session in Redis, creating per-request TwentyCrmMcpServer, delegating to StreamableHttpService (adapted from imap-mcp lib.rs)
+- [x] T011 Wire main.rs to call build_router() and start Axum server on BIND_ADDR in src/main.rs — construct AppState from env vars, initialize OIDC client, connect Redis, create TwentyCrmClient, bind and serve
 
 **Checkpoint**: Foundation ready — OAuth flow works, Redis sessions work, TwentyCRM API client works, MCP endpoint returns 401 without token. User story implementation can now begin.
 
@@ -47,9 +47,9 @@
 
 ### Implementation for User Story 1
 
-- [ ] T012 [US1] Create TwentyCrmMcpServer struct in src/mcp.rs — holds TwentyCrmClient reference; implement rmcp server handler trait; register all 16 tools with names, descriptions, and parameter schemas (initially returning placeholder "not yet implemented" responses)
-- [ ] T013 [US1] Verify full OAuth flow end-to-end in src/auth.rs — ensure callback checks email against ALLOWED_EMAILS, denies access for non-whitelisted emails with clear error, creates session for whitelisted users
-- [ ] T014 [US1] Verify MCP tool listing in src/lib.rs — ensure authenticated requests to /mcp return all 16 tools with correct names (search_companies, view_company, create_company, update_company, etc.), descriptions, and JSON Schema parameter definitions
+- [x] T012 [US1] Create TwentyCrmMcpServer struct in src/mcp.rs — holds TwentyCrmClient reference; implement rmcp server handler trait; register all 16 tools with names, descriptions, and parameter schemas (initially returning placeholder "not yet implemented" responses)
+- [x] T013 [US1] Verify full OAuth flow end-to-end in src/auth.rs — ensure callback checks email against ALLOWED_EMAILS, denies access for non-whitelisted emails with clear error, creates session for whitelisted users
+- [x] T014 [US1] Verify MCP tool listing in src/lib.rs — ensure authenticated requests to /mcp return all 16 tools with correct names (search_companies, view_company, create_company, update_company, etc.), descriptions, and JSON Schema parameter definitions
 
 **Checkpoint**: User Story 1 complete — authenticated users see all 16 tools. Non-whitelisted users are denied. Tool calls return placeholder responses.
 
@@ -63,8 +63,8 @@
 
 ### Implementation for User Story 2
 
-- [ ] T015 [P] [US2] Implement search_companies tool in src/mcp.rs — accept SearchCompaniesParams (query, filter, order_by, limit, starting_after, fields via schemars); call TwentyCrmClient::search("companies", ...); return formatted results with pageInfo; handle empty results gracefully
-- [ ] T016 [P] [US2] Implement view_company tool in src/mcp.rs — accept ViewCompanyParams (id: String, fields: Option<Vec<String>>); call TwentyCrmClient::get("companies", id, fields); return full company record; handle not-found with clear error
+- [x] T015 [P] [US2] Implement search_companies tool in src/mcp.rs — accept SearchCompaniesParams (query, filter, order_by, limit, starting_after, fields via schemars); call TwentyCrmClient::search("companies", ...); return formatted results with pageInfo; handle empty results gracefully
+- [x] T016 [P] [US2] Implement view_company tool in src/mcp.rs — accept ViewCompanyParams (id: String, fields: Option<Vec<String>>); call TwentyCrmClient::get("companies", id, fields); return full company record; handle not-found with clear error
 
 **Checkpoint**: User Story 2 complete — company search with pagination and field selection works. Company detail view works.
 
@@ -78,8 +78,8 @@
 
 ### Implementation for User Story 3
 
-- [ ] T017 [P] [US3] Implement search_contacts tool in src/mcp.rs — accept SearchContactsParams (query, filter, order_by, limit, starting_after, fields); call TwentyCrmClient::search("people", ...); return formatted results with pageInfo
-- [ ] T018 [P] [US3] Implement view_contact tool in src/mcp.rs — accept ViewContactParams (id, fields); call TwentyCrmClient::get("people", id, fields); return full contact record including companyId association
+- [x] T017 [P] [US3] Implement search_contacts tool in src/mcp.rs — accept SearchContactsParams (query, filter, order_by, limit, starting_after, fields); call TwentyCrmClient::search("people", ...); return formatted results with pageInfo
+- [x] T018 [P] [US3] Implement view_contact tool in src/mcp.rs — accept ViewContactParams (id, fields); call TwentyCrmClient::get("people", id, fields); return full contact record including companyId association
 
 **Checkpoint**: User Story 3 complete — contact search and detail view works independently.
 
@@ -93,10 +93,10 @@
 
 ### Implementation for User Story 4
 
-- [ ] T019 [P] [US4] Implement create_company tool in src/mcp.rs — accept CreateCompanyParams (name, domainName, employees, industry, address, etc. as Option fields with schemars); call TwentyCrmClient::create("companies", body); return created record
-- [ ] T020 [P] [US4] Implement create_contact tool in src/mcp.rs — accept CreateContactParams (firstName, lastName, email, phone, jobTitle, companyId, etc.); call TwentyCrmClient::create("people", body); return created record
-- [ ] T021 [P] [US4] Implement create_opportunity tool in src/mcp.rs — accept CreateOpportunityParams (name, stage, closeDate, amount, companyId, pointOfContactId, etc.); call TwentyCrmClient::create("opportunities", body); return created record
-- [ ] T022 [P] [US4] Implement create_task tool in src/mcp.rs — accept CreateTaskParams (title, status, dueAt, assigneeId, body, targetCompanyId, targetPersonId, targetOpportunityId); call TwentyCrmClient::create("tasks", body); if target IDs provided, also create TaskTarget records via separate API call; return created record
+- [x] T019 [P] [US4] Implement create_company tool in src/mcp.rs — accept CreateCompanyParams (name, domainName, employees, industry, address, etc. as Option fields with schemars); call TwentyCrmClient::create("companies", body); return created record
+- [x] T020 [P] [US4] Implement create_contact tool in src/mcp.rs — accept CreateContactParams (firstName, lastName, email, phone, jobTitle, companyId, etc.); call TwentyCrmClient::create("people", body); return created record
+- [x] T021 [P] [US4] Implement create_opportunity tool in src/mcp.rs — accept CreateOpportunityParams (name, stage, closeDate, amount, companyId, pointOfContactId, etc.); call TwentyCrmClient::create("opportunities", body); return created record
+- [x] T022 [P] [US4] Implement create_task tool in src/mcp.rs — accept CreateTaskParams (title, status, dueAt, assigneeId, body, targetCompanyId, targetPersonId, targetOpportunityId); call TwentyCrmClient::create("tasks", body); if target IDs provided, also create TaskTarget records via separate API call; return created record
 
 **Checkpoint**: User Story 4 complete — all four entity types can be created. Validation errors from TwentyCRM API are returned clearly.
 
@@ -110,10 +110,10 @@
 
 ### Implementation for User Story 5
 
-- [ ] T023 [P] [US5] Implement update_company tool in src/mcp.rs — accept UpdateCompanyParams (id: String required, plus all writable company fields as Option); call TwentyCrmClient::update("companies", id, body); return updated record; handle not-found and validation errors
-- [ ] T024 [P] [US5] Implement update_contact tool in src/mcp.rs — accept UpdateContactParams (id required, plus writable contact fields as Option); call TwentyCrmClient::update("people", id, body); return updated record
-- [ ] T025 [P] [US5] Implement update_opportunity tool in src/mcp.rs — accept UpdateOpportunityParams (id required, plus writable opportunity fields as Option); call TwentyCrmClient::update("opportunities", id, body); return updated record
-- [ ] T026 [P] [US5] Implement update_task tool in src/mcp.rs — accept UpdateTaskParams (id required, plus writable task fields as Option); call TwentyCrmClient::update("tasks", id, body); return updated record
+- [x] T023 [P] [US5] Implement update_company tool in src/mcp.rs — accept UpdateCompanyParams (id: String required, plus all writable company fields as Option); call TwentyCrmClient::update("companies", id, body); return updated record; handle not-found and validation errors
+- [x] T024 [P] [US5] Implement update_contact tool in src/mcp.rs — accept UpdateContactParams (id required, plus writable contact fields as Option); call TwentyCrmClient::update("people", id, body); return updated record
+- [x] T025 [P] [US5] Implement update_opportunity tool in src/mcp.rs — accept UpdateOpportunityParams (id required, plus writable opportunity fields as Option); call TwentyCrmClient::update("opportunities", id, body); return updated record
+- [x] T026 [P] [US5] Implement update_task tool in src/mcp.rs — accept UpdateTaskParams (id required, plus writable task fields as Option); call TwentyCrmClient::update("tasks", id, body); return updated record
 
 **Checkpoint**: User Story 5 complete — all four entity types can be updated. Not-found and validation errors are handled.
 
@@ -127,8 +127,8 @@
 
 ### Implementation for User Story 6
 
-- [ ] T027 [P] [US6] Implement search_opportunities tool in src/mcp.rs — accept SearchOpportunitiesParams (query, filter, order_by, limit, starting_after, fields); call TwentyCrmClient::search("opportunities", ...); return formatted results with pageInfo
-- [ ] T028 [P] [US6] Implement view_opportunity tool in src/mcp.rs — accept ViewOpportunityParams (id, fields); call TwentyCrmClient::get("opportunities", id, fields); return full opportunity record
+- [x] T027 [P] [US6] Implement search_opportunities tool in src/mcp.rs — accept SearchOpportunitiesParams (query, filter, order_by, limit, starting_after, fields); call TwentyCrmClient::search("opportunities", ...); return formatted results with pageInfo
+- [x] T028 [P] [US6] Implement view_opportunity tool in src/mcp.rs — accept ViewOpportunityParams (id, fields); call TwentyCrmClient::get("opportunities", id, fields); return full opportunity record
 
 **Checkpoint**: User Story 6 complete — opportunity search and detail view works.
 
@@ -142,8 +142,8 @@
 
 ### Implementation for User Story 7
 
-- [ ] T029 [P] [US7] Implement search_tasks tool in src/mcp.rs — accept SearchTasksParams (query, filter, order_by, limit, starting_after, fields); call TwentyCrmClient::search("tasks", ...); return formatted results with pageInfo
-- [ ] T030 [P] [US7] Implement view_task tool in src/mcp.rs — accept ViewTaskParams (id, fields); call TwentyCrmClient::get("tasks", id, fields); return full task record including taskTargets
+- [x] T029 [P] [US7] Implement search_tasks tool in src/mcp.rs — accept SearchTasksParams (query, filter, order_by, limit, starting_after, fields); call TwentyCrmClient::search("tasks", ...); return formatted results with pageInfo
+- [x] T030 [P] [US7] Implement view_task tool in src/mcp.rs — accept ViewTaskParams (id, fields); call TwentyCrmClient::get("tasks", id, fields); return full task record including taskTargets
 
 **Checkpoint**: User Story 7 complete — task search and detail view works.
 
@@ -154,9 +154,9 @@
 **Purpose**: Integration tests, documentation, and hardening
 
 - [ ] T031 [P] Create integration tests in tests/integration.rs — test OAuth well-known endpoints return correct JSON, test /register rejects empty redirect URIs, test /mcp returns 401 without bearer token, test /mcp returns 401 with invalid token, test tool parameter deserialization with defaults (adapted from imap-mcp integration tests)
-- [ ] T032 [P] Add unit tests in src/error.rs — test status code mapping for each AppError variant, test display messages
-- [ ] T033 [P] Add unit tests in src/session.rs — test encryption/decryption roundtrips, key validation, serialization roundtrips
-- [ ] T034 [P] Add unit tests in src/types.rs — test serde deserialization of TwentyCRM API responses, test schemars JSON Schema generation for tool params
+- [x] T032 [P] Add unit tests in src/error.rs — test status code mapping for each AppError variant, test display messages
+- [x] T033 [P] Add unit tests in src/session.rs — test encryption/decryption roundtrips, key validation, serialization roundtrips
+- [x] T034 [P] Add unit tests in src/types.rs — test serde deserialization of TwentyCRM API responses, test schemars JSON Schema generation for tool params
 - [ ] T035 Run cargo clippy and cargo fmt, fix all warnings
 - [ ] T036 Validate quickstart.md — verify setup instructions work end-to-end (cargo build, env config, Docker compose)
 
