@@ -21,9 +21,7 @@ use crate::AppState;
 
 // ─── Well-Known Endpoints ───────────────────────────────────────────
 
-pub async fn oauth_protected_resource(
-    State(state): State<Arc<AppState>>,
-) -> impl IntoResponse {
+pub async fn oauth_protected_resource(State(state): State<Arc<AppState>>) -> impl IntoResponse {
     Json(json!({
         "resource": state.base_url,
         "authorization_servers": [format!("{}/auth", state.base_url)],
@@ -31,9 +29,7 @@ pub async fn oauth_protected_resource(
     }))
 }
 
-pub async fn oauth_authorization_server(
-    State(state): State<Arc<AppState>>,
-) -> impl IntoResponse {
+pub async fn oauth_authorization_server(State(state): State<Arc<AppState>>) -> impl IntoResponse {
     Json(json!({
         "issuer": format!("{}/auth", state.base_url),
         "authorization_endpoint": format!("{}/auth/login", state.base_url),
@@ -54,9 +50,7 @@ pub struct RegisterRequest {
     pub client_name: Option<String>,
 }
 
-pub async fn register(
-    Json(body): Json<RegisterRequest>,
-) -> Result<impl IntoResponse, AppError> {
+pub async fn register(Json(body): Json<RegisterRequest>) -> Result<impl IntoResponse, AppError> {
     if body.redirect_uris.is_empty() {
         return Err(AppError::Validation(
             "redirect_uris must not be empty".into(),
@@ -167,22 +161,16 @@ pub async fn callback(
 ) -> Result<Response, AppError> {
     // Retrieve and delete auth state
     let mut redis = state.redis.clone();
-    let auth_state_json: Option<String> = redis::AsyncCommands::get(
-        &mut redis,
-        format!("auth_state:{}", params.state),
-    )
-    .await?;
+    let auth_state_json: Option<String> =
+        redis::AsyncCommands::get(&mut redis, format!("auth_state:{}", params.state)).await?;
 
     let auth_state_json = auth_state_json.ok_or(AppError::Auth(
         "Authorization state expired or invalid".into(),
     ))?;
 
     // Delete the auth state (single-use)
-    let _: () = redis::AsyncCommands::del(
-        &mut redis,
-        format!("auth_state:{}", params.state),
-    )
-    .await?;
+    let _: () =
+        redis::AsyncCommands::del(&mut redis, format!("auth_state:{}", params.state)).await?;
 
     let auth_state: AuthStateData = serde_json::from_str(&auth_state_json)
         .map_err(|e| AppError::Internal(format!("Failed to parse auth state: {e}")))?;
@@ -278,21 +266,14 @@ pub async fn token(
 
     // Retrieve and delete auth code (single-use)
     let mut redis = state.redis.clone();
-    let code_data_json: Option<String> = redis::AsyncCommands::get(
-        &mut redis,
-        format!("auth_code:{}", body.code),
-    )
-    .await?;
+    let code_data_json: Option<String> =
+        redis::AsyncCommands::get(&mut redis, format!("auth_code:{}", body.code)).await?;
 
     let code_data_json = code_data_json.ok_or(AppError::Auth(
         "Authorization code expired or invalid".into(),
     ))?;
 
-    let _: () = redis::AsyncCommands::del(
-        &mut redis,
-        format!("auth_code:{}", body.code),
-    )
-    .await?;
+    let _: () = redis::AsyncCommands::del(&mut redis, format!("auth_code:{}", body.code)).await?;
 
     let code_data: serde_json::Value = serde_json::from_str(&code_data_json)
         .map_err(|e| AppError::Internal(format!("Failed to parse auth code data: {e}")))?;
@@ -304,9 +285,10 @@ pub async fn token(
 
     // Verify PKCE code_verifier if code_challenge was provided
     if let Some(expected_challenge) = code_data["code_challenge"].as_str() {
-        let verifier = body.code_verifier.as_deref().ok_or(AppError::Auth(
-            "code_verifier required for PKCE".into(),
-        ))?;
+        let verifier = body
+            .code_verifier
+            .as_deref()
+            .ok_or(AppError::Auth("code_verifier required for PKCE".into()))?;
 
         let method = code_data["code_challenge_method"]
             .as_str()
@@ -315,8 +297,7 @@ pub async fn token(
         if method == "S256" {
             let mut hasher = Sha256::new();
             hasher.update(verifier.as_bytes());
-            let computed = base64::prelude::BASE64_URL_SAFE_NO_PAD
-                .encode(hasher.finalize());
+            let computed = base64::prelude::BASE64_URL_SAFE_NO_PAD.encode(hasher.finalize());
 
             if computed != expected_challenge {
                 return Err(AppError::Auth("PKCE verification failed".into()));
@@ -345,12 +326,10 @@ pub async fn init_oidc_client(
     let issuer = IssuerUrl::new(issuer_url.to_string())
         .map_err(|e| AppError::Oidc(format!("Invalid issuer URL: {e}")))?;
 
-    let metadata = CoreProviderMetadata::discover_async(
-        issuer,
-        openidconnect::reqwest::async_http_client,
-    )
-    .await
-    .map_err(|e| AppError::Oidc(format!("OIDC discovery failed: {e}")))?;
+    let metadata =
+        CoreProviderMetadata::discover_async(issuer, openidconnect::reqwest::async_http_client)
+            .await
+            .map_err(|e| AppError::Oidc(format!("OIDC discovery failed: {e}")))?;
 
     let client = CoreClient::from_provider_metadata(
         metadata,

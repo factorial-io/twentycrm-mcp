@@ -25,8 +25,7 @@ async fn main() {
     let redis_url = env_var("REDIS_URL");
     let encryption_key = env_var("ENCRYPTION_KEY");
     let twentycrm_api_token = env_var("TWENTYCRM_API_TOKEN");
-    let twentycrm_api_url =
-        env_var_or("TWENTYCRM_API_URL", "https://api.twenty.com/rest");
+    let twentycrm_api_url = env_var_or("TWENTYCRM_API_URL", "https://api.twenty.com/rest");
     let allowed_emails: Vec<String> = env_var("ALLOWED_EMAILS")
         .split(',')
         .map(|s| s.trim().to_lowercase())
@@ -56,7 +55,5 @@ async fn main() {
 
     tracing::info!("Listening on {bind_addr}");
 
-    axum::serve(listener, router)
-        .await
-        .expect("Server error");
+    axum::serve(listener, router).await.expect("Server error");
 }

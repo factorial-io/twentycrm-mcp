@@ -23,10 +23,10 @@ pub fn encrypt(key: &[u8; 32], plaintext: &[u8]) -> Result<Vec<u8>, AppError> {
         .map_err(|e| AppError::Encryption(format!("Invalid key: {e}")))?;
 
     let nonce_bytes: [u8; NONCE_SIZE] = rand::random::<[u8; NONCE_SIZE]>();
-    let nonce = Nonce::from_slice(&nonce_bytes);
+    let nonce = Nonce::from(nonce_bytes);
 
     let ciphertext = cipher
-        .encrypt(nonce, plaintext)
+        .encrypt(&nonce, plaintext)
         .map_err(|e| AppError::Encryption(format!("Encryption failed: {e}")))?;
 
     // Prepend nonce to ciphertext
@@ -45,11 +45,14 @@ pub fn decrypt(key: &[u8; 32], data: &[u8]) -> Result<Vec<u8>, AppError> {
     let cipher = Aes256Gcm::new_from_slice(key)
         .map_err(|e| AppError::Encryption(format!("Invalid key: {e}")))?;
 
-    let nonce = Nonce::from_slice(&data[..NONCE_SIZE]);
+    let nonce_array: [u8; NONCE_SIZE] = data[..NONCE_SIZE]
+        .try_into()
+        .map_err(|_| AppError::Encryption("Invalid nonce".into()))?;
+    let nonce = Nonce::from(nonce_array);
     let ciphertext = &data[NONCE_SIZE..];
 
     cipher
-        .decrypt(nonce, ciphertext)
+        .decrypt(&nonce, ciphertext)
         .map_err(|e| AppError::Encryption(format!("Decryption failed: {e}")))
 }
 
@@ -90,9 +93,7 @@ pub async fn get_session(
     token: &str,
     key: &[u8; 32],
 ) -> Result<Session, AppError> {
-    let encoded: Option<String> = redis
-        .get(format!("session:{token}"))
-        .await?;
+    let encoded: Option<String> = redis.get(format!("session:{token}")).await?;
 
     let encoded = encoded.ok_or(AppError::SessionNotFound)?;
 
