@@ -21,6 +21,7 @@ impl TwentyCrmClient {
     }
 
     /// Search/list records for an entity with filtering, pagination, and ordering.
+    #[allow(clippy::too_many_arguments)]
     pub async fn search(
         &self,
         entity: &str,
@@ -33,10 +34,7 @@ impl TwentyCrmClient {
     ) -> Result<ListResponse, AppError> {
         let url = format!("{}/{entity}", self.base_url);
 
-        let mut req = self
-            .client
-            .get(&url)
-            .bearer_auth(&self.api_token);
+        let mut req = self.client.get(&url).bearer_auth(&self.api_token);
 
         // Build filter: combine query (ilike on name) with explicit filter
         let mut filter_parts: Vec<String> = Vec::new();
@@ -69,11 +67,9 @@ impl TwentyCrmClient {
             req = req.query(&[("starting_after", cursor)]);
         }
 
-        let response = req.send().await.map_err(|e| {
-            AppError::TwentyCrmApi {
-                status: 502,
-                message: format!("Failed to connect to TwentyCRM: {e}"),
-            }
+        let response = req.send().await.map_err(|e| AppError::TwentyCrmApi {
+            status: 502,
+            message: format!("Failed to connect to TwentyCRM: {e}"),
         })?;
 
         let status = response.status().as_u16();
@@ -82,9 +78,10 @@ impl TwentyCrmClient {
             return Err(map_api_error(status, &body));
         }
 
-        let list: ListResponse = response.json().await.map_err(|e| {
-            AppError::Internal(format!("Failed to parse TwentyCRM response: {e}"))
-        })?;
+        let list: ListResponse = response
+            .json()
+            .await
+            .map_err(|e| AppError::Internal(format!("Failed to parse TwentyCRM response: {e}")))?;
 
         Ok(list)
     }
@@ -115,19 +112,16 @@ impl TwentyCrmClient {
             return Err(map_api_error(status, &body));
         }
 
-        let record: Value = response.json().await.map_err(|e| {
-            AppError::Internal(format!("Failed to parse TwentyCRM response: {e}"))
-        })?;
+        let record: Value = response
+            .json()
+            .await
+            .map_err(|e| AppError::Internal(format!("Failed to parse TwentyCRM response: {e}")))?;
 
         Ok(record)
     }
 
     /// Create a new record.
-    pub async fn create(
-        &self,
-        entity: &str,
-        body: Value,
-    ) -> Result<Value, AppError> {
+    pub async fn create(&self, entity: &str, body: Value) -> Result<Value, AppError> {
         let url = format!("{}/{entity}", self.base_url);
 
         let response = self
@@ -148,20 +142,16 @@ impl TwentyCrmClient {
             return Err(map_api_error(status, &body));
         }
 
-        let record: Value = response.json().await.map_err(|e| {
-            AppError::Internal(format!("Failed to parse TwentyCRM response: {e}"))
-        })?;
+        let record: Value = response
+            .json()
+            .await
+            .map_err(|e| AppError::Internal(format!("Failed to parse TwentyCRM response: {e}")))?;
 
         Ok(record)
     }
 
     /// Update an existing record by ID (PATCH).
-    pub async fn update(
-        &self,
-        entity: &str,
-        id: &str,
-        body: Value,
-    ) -> Result<Value, AppError> {
+    pub async fn update(&self, entity: &str, id: &str, body: Value) -> Result<Value, AppError> {
         let url = format!("{}/{entity}/{id}", self.base_url);
 
         let response = self
@@ -182,9 +172,10 @@ impl TwentyCrmClient {
             return Err(map_api_error(status, &body));
         }
 
-        let record: Value = response.json().await.map_err(|e| {
-            AppError::Internal(format!("Failed to parse TwentyCRM response: {e}"))
-        })?;
+        let record: Value = response
+            .json()
+            .await
+            .map_err(|e| AppError::Internal(format!("Failed to parse TwentyCRM response: {e}")))?;
 
         Ok(record)
     }

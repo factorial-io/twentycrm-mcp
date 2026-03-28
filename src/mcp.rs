@@ -1,7 +1,7 @@
 use rmcp::handler::server::router::tool::ToolRouter;
 use rmcp::handler::server::wrapper::Parameters;
 use rmcp::model::ServerInfo;
-use rmcp::{ServerHandler, tool, tool_handler, tool_router};
+use rmcp::{tool, tool_handler, tool_router, ServerHandler};
 use serde_json::json;
 
 use crate::twentycrm::TwentyCrmClient;
@@ -25,13 +25,24 @@ impl TwentyCrmMcpServer {
 
     // ─── Companies ──────────────────────────────────────────────────
 
-    #[tool(description = "Search for companies in TwentyCRM by name, domain, industry, or other attributes. Supports filtering, pagination, and field selection.")]
+    #[tool(
+        description = "Search for companies in TwentyCRM by name, domain, industry, or other attributes. Supports filtering, pagination, and field selection."
+    )]
     async fn search_companies(&self, params: Parameters<SearchParams>) -> String {
         let p = params.0;
-        match self.client.search(
-            "companies", p.query.as_deref(), p.filter.as_deref(),
-            p.order_by.as_deref(), p.limit, p.starting_after.as_deref(), p.fields.as_deref(),
-        ).await {
+        match self
+            .client
+            .search(
+                "companies",
+                p.query.as_deref(),
+                p.filter.as_deref(),
+                p.order_by.as_deref(),
+                p.limit,
+                p.starting_after.as_deref(),
+                p.fields.as_deref(),
+            )
+            .await
+        {
             Ok(resp) => format_list_result("companies", resp),
             Err(e) => format_error(e),
         }
@@ -40,7 +51,11 @@ impl TwentyCrmMcpServer {
     #[tool(description = "View full details of a specific company by ID.")]
     async fn view_company(&self, params: Parameters<ViewParams>) -> String {
         let p = params.0;
-        match self.client.get("companies", &p.id, p.fields.as_deref()).await {
+        match self
+            .client
+            .get("companies", &p.id, p.fields.as_deref())
+            .await
+        {
             Ok(record) => format_record(record),
             Err(e) => format_error(e),
         }
@@ -59,8 +74,14 @@ impl TwentyCrmMcpServer {
     async fn update_company(&self, params: Parameters<UpdateCompanyParams>) -> String {
         let id = params.0.id.clone();
         let mut body = serde_json::to_value(&params.0).unwrap_or_default();
-        if let Some(obj) = body.as_object_mut() { obj.remove("id"); }
-        match self.client.update("companies", &id, strip_nulls(body)).await {
+        if let Some(obj) = body.as_object_mut() {
+            obj.remove("id");
+        }
+        match self
+            .client
+            .update("companies", &id, strip_nulls(body))
+            .await
+        {
             Ok(record) => format_record(record),
             Err(e) => format_error(e),
         }
@@ -68,13 +89,24 @@ impl TwentyCrmMcpServer {
 
     // ─── Contacts (People) ──────────────────────────────────────────
 
-    #[tool(description = "Search for contacts/people in TwentyCRM by name, email, phone, or company. Supports filtering, pagination, and field selection.")]
+    #[tool(
+        description = "Search for contacts/people in TwentyCRM by name, email, phone, or company. Supports filtering, pagination, and field selection."
+    )]
     async fn search_contacts(&self, params: Parameters<SearchParams>) -> String {
         let p = params.0;
-        match self.client.search(
-            "people", p.query.as_deref(), p.filter.as_deref(),
-            p.order_by.as_deref(), p.limit, p.starting_after.as_deref(), p.fields.as_deref(),
-        ).await {
+        match self
+            .client
+            .search(
+                "people",
+                p.query.as_deref(),
+                p.filter.as_deref(),
+                p.order_by.as_deref(),
+                p.limit,
+                p.starting_after.as_deref(),
+                p.fields.as_deref(),
+            )
+            .await
+        {
             Ok(resp) => format_list_result("contacts", resp),
             Err(e) => format_error(e),
         }
@@ -94,15 +126,26 @@ impl TwentyCrmMcpServer {
         let p = params.0;
         let mut body = json!({});
         if let Some(first) = &p.first_name {
-            body["name"] = json!({"firstName": first, "lastName": p.last_name.as_deref().unwrap_or("")});
+            body["name"] =
+                json!({"firstName": first, "lastName": p.last_name.as_deref().unwrap_or("")});
         } else if let Some(last) = &p.last_name {
             body["name"] = json!({"firstName": "", "lastName": last});
         }
-        if let Some(email) = &p.email { body["emails"] = json!({"primaryEmail": email}); }
-        if let Some(phone) = &p.phone { body["phones"] = json!({"primaryPhoneNumber": phone}); }
-        if let Some(jt) = &p.job_title { body["jobTitle"] = json!(jt); }
-        if let Some(cid) = &p.company_id { body["companyId"] = json!(cid); }
-        if let Some(city) = &p.city { body["city"] = json!(city); }
+        if let Some(email) = &p.email {
+            body["emails"] = json!({"primaryEmail": email});
+        }
+        if let Some(phone) = &p.phone {
+            body["phones"] = json!({"primaryPhoneNumber": phone});
+        }
+        if let Some(jt) = &p.job_title {
+            body["jobTitle"] = json!(jt);
+        }
+        if let Some(cid) = &p.company_id {
+            body["companyId"] = json!(cid);
+        }
+        if let Some(city) = &p.city {
+            body["city"] = json!(city);
+        }
         match self.client.create("people", body).await {
             Ok(record) => format_record(record),
             Err(e) => format_error(e),
@@ -120,11 +163,21 @@ impl TwentyCrmMcpServer {
                 "lastName": p.last_name.as_deref().unwrap_or("")
             });
         }
-        if let Some(email) = &p.email { body["emails"] = json!({"primaryEmail": email}); }
-        if let Some(phone) = &p.phone { body["phones"] = json!({"primaryPhoneNumber": phone}); }
-        if let Some(jt) = &p.job_title { body["jobTitle"] = json!(jt); }
-        if let Some(cid) = &p.company_id { body["companyId"] = json!(cid); }
-        if let Some(city) = &p.city { body["city"] = json!(city); }
+        if let Some(email) = &p.email {
+            body["emails"] = json!({"primaryEmail": email});
+        }
+        if let Some(phone) = &p.phone {
+            body["phones"] = json!({"primaryPhoneNumber": phone});
+        }
+        if let Some(jt) = &p.job_title {
+            body["jobTitle"] = json!(jt);
+        }
+        if let Some(cid) = &p.company_id {
+            body["companyId"] = json!(cid);
+        }
+        if let Some(city) = &p.city {
+            body["city"] = json!(city);
+        }
         match self.client.update("people", &id, body).await {
             Ok(record) => format_record(record),
             Err(e) => format_error(e),
@@ -133,13 +186,24 @@ impl TwentyCrmMcpServer {
 
     // ─── Opportunities ──────────────────────────────────────────────
 
-    #[tool(description = "Search for opportunities/deals in TwentyCRM by name, stage, company, or other attributes.")]
+    #[tool(
+        description = "Search for opportunities/deals in TwentyCRM by name, stage, company, or other attributes."
+    )]
     async fn search_opportunities(&self, params: Parameters<SearchParams>) -> String {
         let p = params.0;
-        match self.client.search(
-            "opportunities", p.query.as_deref(), p.filter.as_deref(),
-            p.order_by.as_deref(), p.limit, p.starting_after.as_deref(), p.fields.as_deref(),
-        ).await {
+        match self
+            .client
+            .search(
+                "opportunities",
+                p.query.as_deref(),
+                p.filter.as_deref(),
+                p.order_by.as_deref(),
+                p.limit,
+                p.starting_after.as_deref(),
+                p.fields.as_deref(),
+            )
+            .await
+        {
             Ok(resp) => format_list_result("opportunities", resp),
             Err(e) => format_error(e),
         }
@@ -148,7 +212,11 @@ impl TwentyCrmMcpServer {
     #[tool(description = "View full details of a specific opportunity/deal by ID.")]
     async fn view_opportunity(&self, params: Parameters<ViewParams>) -> String {
         let p = params.0;
-        match self.client.get("opportunities", &p.id, p.fields.as_deref()).await {
+        match self
+            .client
+            .get("opportunities", &p.id, p.fields.as_deref())
+            .await
+        {
             Ok(record) => format_record(record),
             Err(e) => format_error(e),
         }
@@ -167,8 +235,14 @@ impl TwentyCrmMcpServer {
     async fn update_opportunity(&self, params: Parameters<UpdateOpportunityParams>) -> String {
         let id = params.0.id.clone();
         let mut body = serde_json::to_value(&params.0).unwrap_or_default();
-        if let Some(obj) = body.as_object_mut() { obj.remove("id"); }
-        match self.client.update("opportunities", &id, strip_nulls(body)).await {
+        if let Some(obj) = body.as_object_mut() {
+            obj.remove("id");
+        }
+        match self
+            .client
+            .update("opportunities", &id, strip_nulls(body))
+            .await
+        {
             Ok(record) => format_record(record),
             Err(e) => format_error(e),
         }
@@ -176,13 +250,24 @@ impl TwentyCrmMcpServer {
 
     // ─── Tasks ──────────────────────────────────────────────────────
 
-    #[tool(description = "Search for tasks in TwentyCRM by title, status, due date, assignee, or linked entity.")]
+    #[tool(
+        description = "Search for tasks in TwentyCRM by title, status, due date, assignee, or linked entity."
+    )]
     async fn search_tasks(&self, params: Parameters<SearchParams>) -> String {
         let p = params.0;
-        match self.client.search(
-            "tasks", p.query.as_deref(), p.filter.as_deref(),
-            p.order_by.as_deref(), p.limit, p.starting_after.as_deref(), p.fields.as_deref(),
-        ).await {
+        match self
+            .client
+            .search(
+                "tasks",
+                p.query.as_deref(),
+                p.filter.as_deref(),
+                p.order_by.as_deref(),
+                p.limit,
+                p.starting_after.as_deref(),
+                p.fields.as_deref(),
+            )
+            .await
+        {
             Ok(resp) => format_list_result("tasks", resp),
             Err(e) => format_error(e),
         }
@@ -197,15 +282,27 @@ impl TwentyCrmMcpServer {
         }
     }
 
-    #[tool(description = "Create a new task in TwentyCRM. Optionally link to a company, person, or opportunity.")]
+    #[tool(
+        description = "Create a new task in TwentyCRM. Optionally link to a company, person, or opportunity."
+    )]
     async fn create_task(&self, params: Parameters<CreateTaskParams>) -> String {
         let p = params.0;
         let mut body = json!({});
-        if let Some(title) = &p.title { body["title"] = json!(title); }
-        if let Some(status) = &p.status { body["status"] = json!(status); }
-        if let Some(due_at) = &p.due_at { body["dueAt"] = json!(due_at); }
-        if let Some(assignee) = &p.assignee_id { body["assigneeId"] = json!(assignee); }
-        if let Some(text) = &p.body { body["bodyV2"] = json!({"markdown": text}); }
+        if let Some(title) = &p.title {
+            body["title"] = json!(title);
+        }
+        if let Some(status) = &p.status {
+            body["status"] = json!(status);
+        }
+        if let Some(due_at) = &p.due_at {
+            body["dueAt"] = json!(due_at);
+        }
+        if let Some(assignee) = &p.assignee_id {
+            body["assigneeId"] = json!(assignee);
+        }
+        if let Some(text) = &p.body {
+            body["bodyV2"] = json!({"markdown": text});
+        }
 
         let record = match self.client.create("tasks", body).await {
             Ok(r) => r,
@@ -237,11 +334,21 @@ impl TwentyCrmMcpServer {
         let p = params.0;
         let id = p.id.clone();
         let mut body = json!({});
-        if let Some(title) = &p.title { body["title"] = json!(title); }
-        if let Some(status) = &p.status { body["status"] = json!(status); }
-        if let Some(due_at) = &p.due_at { body["dueAt"] = json!(due_at); }
-        if let Some(assignee) = &p.assignee_id { body["assigneeId"] = json!(assignee); }
-        if let Some(text) = &p.body { body["bodyV2"] = json!({"markdown": text}); }
+        if let Some(title) = &p.title {
+            body["title"] = json!(title);
+        }
+        if let Some(status) = &p.status {
+            body["status"] = json!(status);
+        }
+        if let Some(due_at) = &p.due_at {
+            body["dueAt"] = json!(due_at);
+        }
+        if let Some(assignee) = &p.assignee_id {
+            body["assigneeId"] = json!(assignee);
+        }
+        if let Some(text) = &p.body {
+            body["bodyV2"] = json!({"markdown": text});
+        }
         match self.client.update("tasks", &id, body).await {
             Ok(record) => format_record(record),
             Err(e) => format_error(e),

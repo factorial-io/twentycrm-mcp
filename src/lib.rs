@@ -1,10 +1,10 @@
 use axum::{
-    Router,
     body::Body,
     extract::State,
     http::{HeaderMap, Request},
-    response::{IntoResponse, Response},
+    response::Response,
     routing::{any, get, post},
+    Router,
 };
 use http_body_util::BodyExt;
 use openidconnect::core::CoreClient;
@@ -37,6 +37,7 @@ pub struct AppState {
 }
 
 impl AppState {
+    #[allow(clippy::too_many_arguments)]
     pub async fn new(
         base_url: &str,
         oidc_issuer_url: &str,
@@ -121,14 +122,12 @@ async fn mcp_handler(
     request: Request<Body>,
 ) -> Result<Response, AppError> {
     // Extract bearer token
-    let token = extract_bearer_token(&headers).ok_or_else(|| {
-        AppError::Auth("Bearer token required".into())
-    })?;
+    let token = extract_bearer_token(&headers)
+        .ok_or_else(|| AppError::Auth("Bearer token required".into()))?;
 
     // Look up session in Redis
     let mut redis = state.redis.clone();
-    let _session =
-        session::get_session(&mut redis, &token, &state.encryption_key).await?;
+    let _session = session::get_session(&mut redis, &token, &state.encryption_key).await?;
 
     // Create per-request MCP server
     let mcp_server = TwentyCrmMcpServer::new(state.twentycrm_client.clone());
@@ -139,18 +138,17 @@ async fn mcp_handler(
 
     let session_manager = Arc::new(LocalSessionManager::default());
 
-    let service = StreamableHttpService::new(
-        move || Ok(mcp_server.clone()),
-        session_manager,
-        config,
-    );
+    let service =
+        StreamableHttpService::new(move || Ok(mcp_server.clone()), session_manager, config);
 
     // Delegate to the MCP transport service
     let response = service.handle(request).await;
 
     // Convert BoxBody response to axum Body
     let (parts, body) = response.into_parts();
-    let bytes = body.collect().await
+    let bytes = body
+        .collect()
+        .await
         .map_err(|e| AppError::Internal(format!("Body collect error: {e}")))?
         .to_bytes();
     let axum_body = Body::from(bytes);
@@ -162,9 +160,7 @@ fn extract_bearer_token(headers: &HeaderMap) -> Option<String> {
     let auth = headers.get(http::header::AUTHORIZATION)?;
     let auth_str = auth.to_str().ok()?;
 
-    if let Some(token) = auth_str.strip_prefix("Bearer ") {
-        Some(token.to_string())
-    } else {
-        None
-    }
+    auth_str
+        .strip_prefix("Bearer ")
+        .map(|token| token.to_string())
 }
