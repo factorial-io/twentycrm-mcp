@@ -33,7 +33,7 @@ pub struct AppState {
     pub redis: redis::aio::MultiplexedConnection,
     pub encryption_key: [u8; 32],
     pub twentycrm_client: TwentyCrmClient,
-    pub allowed_emails: Vec<String>,
+    pub required_groups: Vec<String>,
 }
 
 impl AppState {
@@ -47,7 +47,7 @@ impl AppState {
         encryption_key: &str,
         twentycrm_api_token: &str,
         twentycrm_api_url: &str,
-        allowed_emails: Vec<String>,
+        required_groups: Vec<String>,
     ) -> Arc<Self> {
         let oidc_client =
             auth::init_oidc_client(oidc_issuer_url, oidc_client_id, oidc_client_secret)
@@ -71,7 +71,7 @@ impl AppState {
             redis,
             encryption_key,
             twentycrm_client,
-            allowed_emails,
+            required_groups,
         })
     }
 }

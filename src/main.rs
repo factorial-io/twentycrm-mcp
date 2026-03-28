@@ -26,13 +26,14 @@ async fn main() {
     let encryption_key = env_var("ENCRYPTION_KEY");
     let twentycrm_api_token = env_var("TWENTYCRM_API_TOKEN");
     let twentycrm_api_url = env_var_or("TWENTYCRM_API_URL", "https://api.twenty.com/rest");
-    let allowed_emails: Vec<String> = env_var("ALLOWED_EMAILS")
+    let required_groups: Vec<String> = env_var("REQUIRED_GROUPS")
         .split(',')
-        .map(|s| s.trim().to_lowercase())
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
         .collect();
 
     tracing::info!("Starting TwentyCRM MCP server");
-    tracing::info!("Allowed emails: {:?}", allowed_emails);
+    tracing::info!("Required OIDC groups: {:?}", required_groups);
 
     let app_state = twentycrm_mcp::AppState::new(
         &base_url,
@@ -43,7 +44,7 @@ async fn main() {
         &encryption_key,
         &twentycrm_api_token,
         &twentycrm_api_url,
-        allowed_emails,
+        required_groups,
     )
     .await;
 

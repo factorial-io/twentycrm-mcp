@@ -202,18 +202,42 @@ pub async fn callback(
     let email = claims
         .email()
         .map(|e| e.to_string())
-        .ok_or(AppError::Oidc("No email claim in ID token".into()))?
+        .unwrap_or_else(|| "unknown".to_string())
         .to_lowercase();
 
-    // Check email whitelist
-    if !state.allowed_emails.contains(&email) {
-        tracing::warn!("Access denied for email: {email}");
+    // Extract groups from ID token additional claims (GitLab includes a "groups" claim)
+    let id_token_json = serde_json::to_value(id_token)
+        .map_err(|e| AppError::Oidc(format!("Failed to serialize ID token: {e}")))?;
+
+    let user_groups: Vec<String> = id_token_json
+        .pointer("/claims/groups")
+        .or_else(|| id_token_json.pointer("/claims/groups_direct"))
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                .collect()
+        })
+        .unwrap_or_default();
+
+    // Check group membership: user must be in at least one of the required groups
+    let has_required_group = state
+        .required_groups
+        .iter()
+        .any(|required| user_groups.iter().any(|user_group| user_group == required));
+
+    if !has_required_group {
+        tracing::warn!(
+            "Access denied for {email}: user groups {:?} do not match required groups {:?}",
+            user_groups,
+            state.required_groups
+        );
         return Err(AppError::Auth(format!(
-            "User {email} is not authorized to access this server"
+            "User {email} is not a member of a required group"
         )));
     }
 
-    tracing::info!("Authenticated user: {email}");
+    tracing::info!("Authenticated user: {email} (groups: {:?})", user_groups);
 
     // Create authorization code for the MCP client
     let auth_code = Uuid::new_v4().to_string();
