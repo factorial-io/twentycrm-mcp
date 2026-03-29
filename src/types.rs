@@ -63,6 +63,56 @@ pub struct ViewParams {
     pub fields: Option<Vec<String>>,
 }
 
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct DeleteParams {
+    /// The unique ID of the record to delete.
+    pub id: String,
+}
+
+// ─── Shared Field Types ────────────────────────────────────────────
+
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+pub struct DomainName {
+    /// Primary website URL (e.g. "https://example.com").
+    #[serde(default, rename = "primaryLinkUrl")]
+    pub primary_link_url: Option<String>,
+    /// Display label for the link (e.g. "Website").
+    #[serde(default, rename = "primaryLinkLabel")]
+    pub primary_link_label: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+pub struct Address {
+    /// Street address line 1.
+    #[serde(default, rename = "addressStreet1")]
+    pub street1: Option<String>,
+    /// Street address line 2.
+    #[serde(default, rename = "addressStreet2")]
+    pub street2: Option<String>,
+    /// City.
+    #[serde(default, rename = "addressCity")]
+    pub city: Option<String>,
+    /// State or region.
+    #[serde(default, rename = "addressState")]
+    pub state: Option<String>,
+    /// Postal code.
+    #[serde(default, rename = "addressPostcode")]
+    pub postcode: Option<String>,
+    /// Country.
+    #[serde(default, rename = "addressCountry")]
+    pub country: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+pub struct Phones {
+    /// Primary phone number.
+    #[serde(default, rename = "primaryPhoneNumber")]
+    pub primary_phone_number: Option<String>,
+    /// Primary phone country code (e.g. "+49").
+    #[serde(default, rename = "primaryPhoneCountryCode")]
+    pub primary_phone_country_code: Option<String>,
+}
+
 // ─── Company Tool Parameters ────────────────────────────────────────
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
@@ -70,9 +120,9 @@ pub struct CreateCompanyParams {
     /// Company name.
     #[serde(default)]
     pub name: Option<String>,
-    /// Primary website URL.
+    /// Company website domain.
     #[serde(default, rename = "domainName")]
-    pub domain_name: Option<serde_json::Value>,
+    pub domain_name: Option<DomainName>,
     /// Number of employees.
     #[serde(default)]
     pub employees: Option<i64>,
@@ -81,10 +131,10 @@ pub struct CreateCompanyParams {
     pub industry: Option<String>,
     /// Company address.
     #[serde(default)]
-    pub address: Option<serde_json::Value>,
+    pub address: Option<Address>,
     /// Phone numbers.
     #[serde(default)]
-    pub phones: Option<serde_json::Value>,
+    pub phones: Option<Phones>,
     /// Description.
     #[serde(default)]
     pub description: Option<String>,
@@ -96,16 +146,19 @@ pub struct UpdateCompanyParams {
     pub id: String,
     #[serde(default)]
     pub name: Option<String>,
+    /// Company website domain.
     #[serde(default, rename = "domainName")]
-    pub domain_name: Option<serde_json::Value>,
+    pub domain_name: Option<DomainName>,
     #[serde(default)]
     pub employees: Option<i64>,
     #[serde(default)]
     pub industry: Option<String>,
+    /// Company address.
     #[serde(default)]
-    pub address: Option<serde_json::Value>,
+    pub address: Option<Address>,
+    /// Phone numbers.
     #[serde(default)]
-    pub phones: Option<serde_json::Value>,
+    pub phones: Option<Phones>,
     #[serde(default)]
     pub description: Option<String>,
 }
@@ -123,6 +176,9 @@ pub struct CreateContactParams {
     /// Primary email address.
     #[serde(default)]
     pub email: Option<String>,
+    /// Additional email addresses.
+    #[serde(default, rename = "additionalEmails")]
+    pub additional_emails: Option<Vec<String>>,
     /// Primary phone number.
     #[serde(default)]
     pub phone: Option<String>,
@@ -147,6 +203,9 @@ pub struct UpdateContactParams {
     pub last_name: Option<String>,
     #[serde(default)]
     pub email: Option<String>,
+    /// Additional email addresses (replaces existing list).
+    #[serde(default, rename = "additionalEmails")]
+    pub additional_emails: Option<Vec<String>>,
     #[serde(default)]
     pub phone: Option<String>,
     #[serde(default, rename = "jobTitle")]
@@ -160,19 +219,29 @@ pub struct UpdateContactParams {
 // ─── Opportunity Tool Parameters ────────────────────────────────────
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
+pub struct Amount {
+    /// Amount in micros (e.g. 50000000000 = 50,000.00).
+    #[serde(default, rename = "amountMicros")]
+    pub amount_micros: Option<i64>,
+    /// ISO 4217 currency code (e.g. "EUR", "USD").
+    #[serde(default, rename = "currencyCode")]
+    pub currency_code: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
 pub struct CreateOpportunityParams {
     /// Opportunity name.
     #[serde(default)]
     pub name: Option<String>,
-    /// Pipeline stage.
+    /// Pipeline stage. Valid values: PROSPECT, DISCOVERY_CALL, OPT1_CHEMISTRY_MEETING, OPT2ND_NEGOTIATING, REBRIEFING_OFFERING, CLOSED_WON, NOT_RELEVANT_RIGHT_NOW, CLOSED_LOST.
     #[serde(default)]
     pub stage: Option<String>,
     /// Expected close date (ISO 8601).
     #[serde(default, rename = "closeDate")]
     pub close_date: Option<String>,
-    /// Deal amount as object { amountMicros, currencyCode }.
+    /// Deal amount.
     #[serde(default)]
-    pub amount: Option<serde_json::Value>,
+    pub amount: Option<Amount>,
     /// Associated company ID.
     #[serde(default, rename = "companyId")]
     pub company_id: Option<String>,
@@ -187,12 +256,14 @@ pub struct UpdateOpportunityParams {
     pub id: String,
     #[serde(default)]
     pub name: Option<String>,
+    /// Pipeline stage. Valid values: PROSPECT, DISCOVERY_CALL, OPT1_CHEMISTRY_MEETING, OPT2ND_NEGOTIATING, REBRIEFING_OFFERING, CLOSED_WON, NOT_RELEVANT_RIGHT_NOW, CLOSED_LOST.
     #[serde(default)]
     pub stage: Option<String>,
     #[serde(default, rename = "closeDate")]
     pub close_date: Option<String>,
+    /// Deal amount.
     #[serde(default)]
-    pub amount: Option<serde_json::Value>,
+    pub amount: Option<Amount>,
     #[serde(default, rename = "companyId")]
     pub company_id: Option<String>,
     #[serde(default, rename = "pointOfContactId")]
@@ -243,6 +314,54 @@ pub struct UpdateTaskParams {
     pub assignee_id: Option<String>,
     #[serde(default)]
     pub body: Option<String>,
+}
+
+// ─── Note Tool Parameters ──────────────────────────────────────────
+
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+pub struct CreateNoteParams {
+    /// Note title.
+    #[serde(default)]
+    pub title: Option<String>,
+    /// Note body (markdown).
+    #[serde(default)]
+    pub body: Option<String>,
+    /// Link note to a company.
+    #[serde(default, rename = "targetCompanyId")]
+    pub target_company_id: Option<String>,
+    /// Link note to a person/contact.
+    #[serde(default, rename = "targetPersonId")]
+    pub target_person_id: Option<String>,
+    /// Link note to an opportunity.
+    #[serde(default, rename = "targetOpportunityId")]
+    pub target_opportunity_id: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+pub struct UpdateNoteParams {
+    /// The unique ID of the note to update.
+    pub id: String,
+    #[serde(default)]
+    pub title: Option<String>,
+    /// Note body (markdown).
+    #[serde(default)]
+    pub body: Option<String>,
+}
+
+// ─── Timeline Tool Parameters ──────────────────────────────────────
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct TimelineParams {
+    /// The entity type: "company", "contact", "opportunity", or "task".
+    pub entity_type: String,
+    /// The unique ID of the entity whose timeline to retrieve.
+    pub entity_id: String,
+    /// Maximum number of results to return (default: 20).
+    #[serde(default = "default_limit")]
+    pub limit: Option<i64>,
+    /// Cursor for the next page of results.
+    #[serde(default)]
+    pub starting_after: Option<String>,
 }
 
 #[cfg(test)]

@@ -1,13 +1,13 @@
 use axum::{
     extract::{Query, State},
     response::{IntoResponse, Redirect, Response},
-    Json,
+    Form, Json,
 };
 use base64::Engine;
 use openidconnect::{
     core::{CoreClient, CoreProviderMetadata, CoreResponseType},
     AuthenticationFlow, AuthorizationCode, ClientId, ClientSecret, CsrfToken, IssuerUrl, Nonce,
-    PkceCodeChallenge, PkceCodeVerifier, RedirectUrl, Scope, TokenResponse,
+    OAuth2TokenResponse, PkceCodeChallenge, PkceCodeVerifier, RedirectUrl, Scope, TokenResponse,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -24,21 +24,21 @@ use crate::AppState;
 pub async fn oauth_protected_resource(State(state): State<Arc<AppState>>) -> impl IntoResponse {
     Json(json!({
         "resource": state.base_url,
-        "authorization_servers": [format!("{}/auth", state.base_url)],
+        "authorization_servers": [&state.base_url],
         "bearer_methods_supported": ["header"],
     }))
 }
 
 pub async fn oauth_authorization_server(State(state): State<Arc<AppState>>) -> impl IntoResponse {
     Json(json!({
-        "issuer": format!("{}/auth", state.base_url),
+        "issuer": &state.base_url,
         "authorization_endpoint": format!("{}/auth/login", state.base_url),
         "token_endpoint": format!("{}/auth/token", state.base_url),
         "registration_endpoint": format!("{}/register", state.base_url),
         "response_types_supported": ["code"],
         "grant_types_supported": ["authorization_code"],
         "code_challenge_methods_supported": ["S256"],
-        "token_endpoint_auth_methods_supported": ["client_secret_post", "none"],
+        "token_endpoint_auth_methods_supported": ["none"],
     }))
 }
 
@@ -205,13 +205,32 @@ pub async fn callback(
         .unwrap_or_else(|| "unknown".to_string())
         .to_lowercase();
 
-    // Extract groups from ID token additional claims (GitLab includes a "groups" claim)
-    let id_token_json = serde_json::to_value(id_token)
-        .map_err(|e| AppError::Oidc(format!("Failed to serialize ID token: {e}")))?;
+    // Fetch user groups from the OIDC userinfo endpoint using the access token.
+    // GitLab includes a "groups" claim in the userinfo response but not in the ID token.
+    let access_token = token_response.access_token().secret();
+    let userinfo_url = format!(
+        "{}/oauth/userinfo",
+        state.oidc_issuer_url.trim_end_matches('/')
+    );
 
-    let user_groups: Vec<String> = id_token_json
-        .pointer("/claims/groups")
-        .or_else(|| id_token_json.pointer("/claims/groups_direct"))
+    let http_client = reqwest::Client::new();
+    let userinfo_response = http_client
+        .get(&userinfo_url)
+        .bearer_auth(access_token)
+        .send()
+        .await
+        .map_err(|e| AppError::Oidc(format!("Userinfo request failed: {e}")))?;
+
+    let userinfo_json: serde_json::Value = userinfo_response
+        .json()
+        .await
+        .map_err(|e| AppError::Oidc(format!("Userinfo parse failed: {e}")))?;
+
+    tracing::debug!("Userinfo response: {}", userinfo_json);
+
+    let user_groups: Vec<String> = userinfo_json
+        .get("groups")
+        .or_else(|| userinfo_json.get("groups_direct"))
         .and_then(|v| v.as_array())
         .map(|arr| {
             arr.iter()
@@ -280,7 +299,7 @@ pub struct TokenRequest {
 
 pub async fn token(
     State(state): State<Arc<AppState>>,
-    Json(body): Json<TokenRequest>,
+    Form(body): Form<TokenRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     if body.grant_type != "authorization_code" {
         return Err(AppError::Validation(
