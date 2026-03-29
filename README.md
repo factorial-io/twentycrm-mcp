@@ -68,6 +68,37 @@ View logs:
 docker compose -f docker-compose.dev.yml logs -f twentycrm-mcp
 ```
 
+## Production Deployment
+
+```bash
+docker pull ghcr.io/factorial-io/twentycrm-mcp:latest
+```
+
+Run with your environment variables:
+
+```bash
+docker run -d \
+  --name twentycrm-mcp \
+  -p 8080:8080 \
+  -e TWENTYCRM_API_TOKEN=... \
+  -e REQUIRED_GROUPS=... \
+  -e OIDC_ISSUER_URL=... \
+  -e OIDC_CLIENT_ID=... \
+  -e OIDC_CLIENT_SECRET=... \
+  -e BASE_URL=https://your-domain.example.com \
+  -e REDIS_URL=redis://your-redis:6379 \
+  -e ENCRYPTION_KEY=... \
+  ghcr.io/factorial-io/twentycrm-mcp:latest
+```
+
+Or use a `.env` file:
+
+```bash
+docker run -d --name twentycrm-mcp -p 8080:8080 --env-file .env ghcr.io/factorial-io/twentycrm-mcp:latest
+```
+
+The server requires a Redis instance for session storage. In production, place the server behind a reverse proxy with TLS — the `BASE_URL` must match the public HTTPS URL that clients use.
+
 ## Local Development (Cargo)
 
 ```bash
