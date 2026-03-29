@@ -10,7 +10,6 @@ Access is controlled via OIDC group membership (e.g. GitLab groups). The server 
 - Docker and Docker Compose
 - A TwentyCRM workspace with an API token (Settings > Developers > API keys)
 - An OIDC provider (GitLab, Keycloak, Auth0, or similar)
-- [1Password CLI](https://developer.1password.com/docs/cli/) (`op`) for secret management (optional)
 
 ## Environment Variables
 
@@ -34,13 +33,17 @@ Copy `.env.example` and fill in your values:
 cp .env.example .env
 ```
 
-## Local Development (Docker Compose + 1Password)
+## Local Development (Docker Compose)
 
-The dev stack runs the MCP server, Redis, and an ngrok tunnel. Secrets are injected at runtime via `op run`.
-
-Create `.env.1password` with `op://` references for secrets (see `.env.example` for the template), then:
+The dev stack runs the MCP server, Redis, and an ngrok tunnel for public access.
 
 ```bash
+# Set environment variables (pick one):
+# Option A: source a .env file
+set -a && source .env && set +a
+docker compose -f docker-compose.dev.yml up -d --build
+
+# Option B: use 1Password CLI (if secrets are stored in 1Password)
 op run --env-file=.env.1password -- docker compose -f docker-compose.dev.yml up -d --build
 ```
 
@@ -77,19 +80,25 @@ cargo run
 
 ## Available Tools
 
-| Entity | Search | View | Create | Update |
-|--------|--------|------|--------|--------|
-| Companies | `search_companies` | `view_company` | `create_company` | `update_company` |
-| Contacts | `search_contacts` | `view_contact` | `create_contact` | `update_contact` |
-| Opportunities | `search_opportunities` | `view_opportunity` | `create_opportunity` | `update_opportunity` |
-| Tasks | `search_tasks` | `view_task` | `create_task` | `update_task` |
+| Entity | Search | View | Create | Update | Delete |
+|--------|--------|------|--------|--------|--------|
+| Companies | `search_companies` | `view_company` | `create_company` | `update_company` | `delete_company` |
+| Contacts | `search_contacts` | `view_contact` | `create_contact` | `update_contact` | `delete_contact` |
+| Opportunities | `search_opportunities` | `view_opportunity` | `create_opportunity` | `update_opportunity` | `delete_opportunity` |
+| Tasks | `search_tasks` | `view_task` | `create_task` | `update_task` | `delete_task` |
+| Notes | `search_notes` | `view_note` | `create_note` | `update_note` | `delete_note` |
+| Messages | `search_messages` | `view_message` | | | |
+| Message Threads | | `view_message_thread` | | | |
+| Calendar Events | `search_calendar_events` | `view_calendar_event` | | | |
+| Timeline | `get_timeline` | | | | |
+| Members | `list_workspace_members` | | | | |
 
 ## Connecting from claude.ai
 
 1. Go to claude.ai Settings > Integrations
 2. Add a new MCP server with your `BASE_URL`
 3. Authenticate via your OIDC provider when prompted
-4. The 16 CRM tools will appear in the tool list
+4. The CRM tools will appear in the tool list
 
 ## Testing
 
