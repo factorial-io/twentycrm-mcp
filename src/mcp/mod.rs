@@ -1,6 +1,6 @@
 mod helpers;
 
-use helpers::{format_error, format_list_result, format_record, strip_nulls};
+use helpers::{extract_id, format_error, format_list_result, format_record, strip_nulls};
 use rmcp::handler::server::router::tool::ToolRouter;
 use rmcp::handler::server::wrapper::Parameters;
 use rmcp::model::{ServerCapabilities, ServerInfo};
@@ -377,7 +377,7 @@ impl TwentyCrmMcpServer {
         };
 
         // Create task targets if linked entities provided
-        let task_id = record.get("id").and_then(|v| v.as_str()).unwrap_or("");
+        let task_id = extract_id(&record).unwrap_or("");
         if !task_id.is_empty() {
             for (field, value) in [
                 ("targetCompanyId", &p.target_company_id),
@@ -483,7 +483,7 @@ impl TwentyCrmMcpServer {
         };
 
         // Create noteTargets to link the note to entities
-        let note_id = record.get("id").and_then(|v| v.as_str()).unwrap_or("");
+        let note_id = extract_id(&record).unwrap_or("");
         if !note_id.is_empty() {
             for (field, value) in [
                 ("targetCompanyId", &p.target_company_id),
@@ -590,6 +590,209 @@ impl TwentyCrmMcpServer {
             Err(e) => format_error(e),
         }
     }
+
+    // ─── Messages ───────────────────────────────────────────────────
+
+    #[tool(
+        description = "Search for email messages in TwentyCRM. Filter by linked contact (personId) or search by subject. Messages are synced from connected email accounts."
+    )]
+    async fn search_messages(&self, params: Parameters<SearchMessagesParams>) -> String {
+        let p = params.0;
+
+        // If personId is provided, first find messageParticipants for that person,
+        // then look up the messages. Otherwise search messages directly.
+        if let Some(person_id) = &p.person_id {
+            let filter = format!("personId[eq]:{person_id}");
+            let participants = match self
+                .client
+                .search(
+                    "messageParticipants",
+                    None,
+                    Some(&filter),
+                    None,
+                    Some(50),
+                    None,
+                    None,
+                )
+                .await
+            {
+                Ok(resp) => resp,
+                Err(e) => return format_error(e),
+            };
+
+            // Extract unique messageIds from participants
+            let message_ids: Vec<String> = participants
+                .data
+                .as_object()
+                .and_then(|obj| obj.values().next())
+                .and_then(|v| v.as_array())
+                .map(|arr| {
+                    arr.iter()
+                        .filter_map(|p| p.get("messageId").and_then(|v| v.as_str()))
+                        .map(|s| s.to_string())
+                        .collect()
+                })
+                .unwrap_or_default();
+
+            if message_ids.is_empty() {
+                return format_list_result(
+                    "messages",
+                    crate::types::ListResponse {
+                        data: json!([]),
+                        page_info: None,
+                    },
+                );
+            }
+
+            // Fetch messages by IDs (up to limit)
+            let ids: Vec<&str> = message_ids
+                .iter()
+                .take(p.limit.unwrap_or(20) as usize)
+                .map(|s| s.as_str())
+                .collect();
+            let id_filter = format!(
+                "id[in]:[{}]",
+                ids.iter()
+                    .map(|id| format!("\"{id}\""))
+                    .collect::<Vec<_>>()
+                    .join(",")
+            );
+            match self
+                .client
+                .search(
+                    "messages",
+                    None,
+                    Some(&id_filter),
+                    Some("receivedAt[DescNullsLast]"),
+                    p.limit,
+                    None,
+                    None,
+                )
+                .await
+            {
+                Ok(resp) => format_list_result("messages", resp),
+                Err(e) => format_error(e),
+            }
+        } else {
+            let mut filter_parts: Vec<String> = Vec::new();
+            if let Some(subject) = &p.subject {
+                filter_parts.push(format!("subject[ilike]:%{subject}%"));
+            }
+            if let Some(f) = &p.filter {
+                filter_parts.push(f.clone());
+            }
+            let filter = if filter_parts.is_empty() {
+                None
+            } else {
+                Some(filter_parts.join(","))
+            };
+            match self
+                .client
+                .search(
+                    "messages",
+                    None,
+                    filter.as_deref(),
+                    Some("receivedAt[DescNullsLast]"),
+                    p.limit,
+                    p.starting_after.as_deref(),
+                    None,
+                )
+                .await
+            {
+                Ok(resp) => format_list_result("messages", resp),
+                Err(e) => format_error(e),
+            }
+        }
+    }
+
+    #[tool(
+        description = "View a specific email message by ID, including subject, text, and participants."
+    )]
+    async fn view_message(&self, params: Parameters<ViewParams>) -> String {
+        let p = params.0;
+        match self
+            .client
+            .get("messages", &p.id, p.fields.as_deref())
+            .await
+        {
+            Ok(record) => format_record(record),
+            Err(e) => format_error(e),
+        }
+    }
+
+    #[tool(description = "View all messages in a message thread by thread ID.")]
+    async fn view_message_thread(&self, params: Parameters<ViewParams>) -> String {
+        let p = params.0;
+        match self
+            .client
+            .get("messageThreads", &p.id, p.fields.as_deref())
+            .await
+        {
+            Ok(record) => format_record(record),
+            Err(e) => format_error(e),
+        }
+    }
+
+    // ─── Calendar Events ────────────────────────────────────────────
+
+    #[tool(
+        description = "Search for calendar events in TwentyCRM. Filter by date range (startsAfter/startsBefore) or search by title. Events are synced from connected calendar accounts."
+    )]
+    async fn search_calendar_events(
+        &self,
+        params: Parameters<SearchCalendarEventsParams>,
+    ) -> String {
+        let p = params.0;
+        let mut filter_parts: Vec<String> = Vec::new();
+        if let Some(after) = &p.starts_after {
+            filter_parts.push(format!("startsAt[gte]:{after}"));
+        }
+        if let Some(before) = &p.starts_before {
+            filter_parts.push(format!("startsAt[lte]:{before}"));
+        }
+        if let Some(title) = &p.title {
+            filter_parts.push(format!("title[ilike]:%{title}%"));
+        }
+        if let Some(f) = &p.filter {
+            filter_parts.push(f.clone());
+        }
+        let filter = if filter_parts.is_empty() {
+            None
+        } else {
+            Some(filter_parts.join(","))
+        };
+        match self
+            .client
+            .search(
+                "calendarEvents",
+                None,
+                filter.as_deref(),
+                Some("startsAt[AscNullsLast]"),
+                p.limit,
+                p.starting_after.as_deref(),
+                None,
+            )
+            .await
+        {
+            Ok(resp) => format_list_result("calendarEvents", resp),
+            Err(e) => format_error(e),
+        }
+    }
+
+    #[tool(
+        description = "View a specific calendar event by ID, including title, times, location, description, and participants."
+    )]
+    async fn view_calendar_event(&self, params: Parameters<ViewParams>) -> String {
+        let p = params.0;
+        match self
+            .client
+            .get("calendarEvents", &p.id, p.fields.as_deref())
+            .await
+        {
+            Ok(record) => format_record(record),
+            Err(e) => format_error(e),
+        }
+    }
 }
 
 #[tool_handler]
@@ -597,7 +800,7 @@ impl ServerHandler for TwentyCrmMcpServer {
     fn get_info(&self) -> ServerInfo {
         let mut info = ServerInfo::new(ServerCapabilities::builder().enable_tools().build());
         info.instructions = Some(
-            "TwentyCRM MCP Server. Search, view, create, update, and delete companies, contacts, opportunities, tasks, and notes. View entity timelines for activity history.".into()
+            "TwentyCRM MCP Server. Manage companies, contacts, opportunities, tasks, and notes. Search email messages and calendar events. View entity timelines for activity history.".into()
         );
         info
     }
