@@ -19,7 +19,7 @@ src/
 ├── auth.rs          # OAuth/OIDC flow (from imap-mcp)
 ├── session.rs       # Redis sessions, AES-256-GCM encryption (from imap-mcp)
 ├── error.rs         # AppError enum (from imap-mcp)
-├── mcp.rs           # 16 MCP tool implementations
+├── mcp.rs           # MCP tool implementations
 ├── twentycrm.rs     # TwentyCRM REST API client
 └── types.rs         # Entity structs, tool params (schemars)
 tests/
@@ -48,5 +48,8 @@ cargo fmt            # Format
 
 - 001-twentycrm-mcp-server: Rust MCP server with axum + rmcp, following imap-mcp blueprint
 
-<!-- MANUAL ADDITIONS START -->
-<!-- MANUAL ADDITIONS END -->
+## TwentyCRM API Reference
+
+The OpenAPI specs are in `docs/`:
+- `docs/core.json` — Core entity endpoints (companies, people, notes, tasks, opportunities, timelineActivities, noteTargets, etc.)
+- `docs/metadata.json` — Metadata/schema endpoints

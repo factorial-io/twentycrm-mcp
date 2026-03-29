@@ -36,23 +36,29 @@ impl TwentyCrmClient {
 
         let mut req = self.client.get(&url).bearer_auth(&self.api_token);
 
-        // Build filter: combine query (ilike on name) with explicit filter
-        let mut filter_parts: Vec<String> = Vec::new();
-
+        // Build filter: combine query with explicit filter.
+        // For people, the query searches across name and email using OR.
+        // For other entities, it searches by name.
         if let Some(q) = query {
-            let search_field = match entity {
-                "people" => "name.firstName[ilike]",
-                _ => "name[ilike]",
-            };
-            filter_parts.push(format!("{search_field}:%{q}%"));
+            match entity {
+                "people" => {
+                    // TwentyCRM OR filter: search name and email
+                    let name_filter = format!("name.firstName[ilike]:%{q}%");
+                    let last_filter = format!("name.lastName[ilike]:%{q}%");
+                    let email_filter = format!("emails.primaryEmail[ilike]:%{q}%");
+                    req = req.query(&[(
+                        "filter",
+                        format!("or({name_filter},{last_filter},{email_filter})"),
+                    )]);
+                }
+                _ => {
+                    req = req.query(&[("filter", format!("name[ilike]:%{q}%"))]);
+                }
+            }
         }
 
         if let Some(f) = filter {
-            filter_parts.push(f.to_string());
-        }
-
-        if !filter_parts.is_empty() {
-            req = req.query(&[("filter", filter_parts.join(","))]);
+            req = req.query(&[("filter", f.to_string())]);
         }
 
         if let Some(ob) = order_by {
@@ -179,6 +185,30 @@ impl TwentyCrmClient {
 
         Ok(record)
     }
+
+    /// Delete a record by ID.
+    pub async fn delete(&self, entity: &str, id: &str) -> Result<(), AppError> {
+        let url = format!("{}/{entity}/{id}", self.base_url);
+
+        let response = self
+            .client
+            .delete(&url)
+            .bearer_auth(&self.api_token)
+            .send()
+            .await
+            .map_err(|e| AppError::TwentyCrmApi {
+                status: 502,
+                message: format!("Failed to connect to TwentyCRM: {e}"),
+            })?;
+
+        let status = response.status().as_u16();
+        if status >= 400 {
+            let body = response.text().await.unwrap_or_default();
+            return Err(map_api_error(status, &body));
+        }
+
+        Ok(())
+    }
 }
 
 /// Map TwentyCRM API HTTP status codes to AppError.
@@ -201,14 +231,42 @@ fn map_api_error(status: u16, body: &str) -> AppError {
 }
 
 /// Try to extract a useful error message from the API response body.
+/// TwentyCRM returns various shapes: {"message": "..."}, {"error": "...", "messages": [...]},
+/// or {"message": ["..."]}, so we try to combine all useful info.
 fn extract_error_message(body: &str) -> String {
     if let Ok(json) = serde_json::from_str::<Value>(body) {
-        if let Some(msg) = json.get("message").and_then(|v| v.as_str()) {
-            return msg.to_string();
-        }
+        let mut parts: Vec<String> = Vec::new();
+
+        // "error" field (e.g. "BadRequestException")
         if let Some(err) = json.get("error").and_then(|v| v.as_str()) {
-            return err.to_string();
+            parts.push(err.to_string());
+        }
+
+        // "message" field — can be a string or array of strings
+        match json.get("message") {
+            Some(Value::String(s)) => parts.push(s.clone()),
+            Some(Value::Array(arr)) => {
+                for item in arr {
+                    if let Some(s) = item.as_str() {
+                        parts.push(s.to_string());
+                    }
+                }
+            }
+            _ => {}
+        }
+
+        // "messages" field (array)
+        if let Some(Value::Array(arr)) = json.get("messages") {
+            for item in arr {
+                if let Some(s) = item.as_str() {
+                    parts.push(s.to_string());
+                }
+            }
+        }
+
+        if !parts.is_empty() {
+            return parts.join(": ");
         }
     }
-    body.chars().take(200).collect()
+    body.chars().take(500).collect()
 }

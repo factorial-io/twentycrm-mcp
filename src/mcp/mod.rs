@@ -1,6 +1,9 @@
+mod helpers;
+
+use helpers::{format_error, format_list_result, format_record, strip_nulls};
 use rmcp::handler::server::router::tool::ToolRouter;
 use rmcp::handler::server::wrapper::Parameters;
-use rmcp::model::ServerInfo;
+use rmcp::model::{ServerCapabilities, ServerInfo};
 use rmcp::{tool, tool_handler, tool_router, ServerHandler};
 use serde_json::json;
 
@@ -87,10 +90,18 @@ impl TwentyCrmMcpServer {
         }
     }
 
+    #[tool(description = "Delete a company record from TwentyCRM by ID.")]
+    async fn delete_company(&self, params: Parameters<DeleteParams>) -> String {
+        match self.client.delete("companies", &params.0.id).await {
+            Ok(()) => format!("Company {} deleted.", params.0.id),
+            Err(e) => format_error(e),
+        }
+    }
+
     // ─── Contacts (People) ──────────────────────────────────────────
 
     #[tool(
-        description = "Search for contacts/people in TwentyCRM by name, email, phone, or company. Supports filtering, pagination, and field selection."
+        description = "Search for contacts/people in TwentyCRM. The query parameter searches across first name, last name, and primary email. Use the filter parameter for precise field matching (e.g. emails.primaryEmail[eq]:user@example.com). Supports pagination and field selection."
     )]
     async fn search_contacts(&self, params: Parameters<SearchParams>) -> String {
         let p = params.0;
@@ -131,8 +142,15 @@ impl TwentyCrmMcpServer {
         } else if let Some(last) = &p.last_name {
             body["name"] = json!({"firstName": "", "lastName": last});
         }
-        if let Some(email) = &p.email {
-            body["emails"] = json!({"primaryEmail": email});
+        if p.email.is_some() || p.additional_emails.is_some() {
+            let mut emails = json!({});
+            if let Some(email) = &p.email {
+                emails["primaryEmail"] = json!(email);
+            }
+            if let Some(additional) = &p.additional_emails {
+                emails["additionalEmails"] = json!(additional);
+            }
+            body["emails"] = emails;
         }
         if let Some(phone) = &p.phone {
             body["phones"] = json!({"primaryPhoneNumber": phone});
@@ -152,19 +170,52 @@ impl TwentyCrmMcpServer {
         }
     }
 
-    #[tool(description = "Update an existing contact/person record in TwentyCRM.")]
+    #[tool(
+        description = "Update an existing contact/person record in TwentyCRM. You can update firstName or lastName independently — the other will be preserved. Use additionalEmails to add secondary email addresses (e.g. for email consolidation)."
+    )]
     async fn update_contact(&self, params: Parameters<UpdateContactParams>) -> String {
         let p = params.0;
         let id = p.id.clone();
         let mut body = json!({});
+
+        // Name is a composite object in Twenty — sending one field without the other
+        // zeros it out. Read-then-merge so callers can update either independently.
         if p.first_name.is_some() || p.last_name.is_some() {
+            let (existing_first, existing_last) = match self.client.get("people", &id, None).await {
+                Ok(record) => {
+                    let name = record
+                        .pointer("/data/person/name")
+                        .or_else(|| record.get("name"));
+                    let first = name
+                        .and_then(|n| n.get("firstName"))
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string();
+                    let last = name
+                        .and_then(|n| n.get("lastName"))
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string();
+                    (first, last)
+                }
+                Err(e) => return format_error(e),
+            };
+
             body["name"] = json!({
-                "firstName": p.first_name.as_deref().unwrap_or(""),
-                "lastName": p.last_name.as_deref().unwrap_or("")
+                "firstName": p.first_name.as_deref().unwrap_or(&existing_first),
+                "lastName": p.last_name.as_deref().unwrap_or(&existing_last),
             });
         }
-        if let Some(email) = &p.email {
-            body["emails"] = json!({"primaryEmail": email});
+
+        if p.email.is_some() || p.additional_emails.is_some() {
+            let mut emails = json!({});
+            if let Some(email) = &p.email {
+                emails["primaryEmail"] = json!(email);
+            }
+            if let Some(additional) = &p.additional_emails {
+                emails["additionalEmails"] = json!(additional);
+            }
+            body["emails"] = emails;
         }
         if let Some(phone) = &p.phone {
             body["phones"] = json!({"primaryPhoneNumber": phone});
@@ -180,6 +231,14 @@ impl TwentyCrmMcpServer {
         }
         match self.client.update("people", &id, body).await {
             Ok(record) => format_record(record),
+            Err(e) => format_error(e),
+        }
+    }
+
+    #[tool(description = "Delete a contact/person record from TwentyCRM by ID.")]
+    async fn delete_contact(&self, params: Parameters<DeleteParams>) -> String {
+        match self.client.delete("people", &params.0.id).await {
+            Ok(()) => format!("Contact {} deleted.", params.0.id),
             Err(e) => format_error(e),
         }
     }
@@ -244,6 +303,14 @@ impl TwentyCrmMcpServer {
             .await
         {
             Ok(record) => format_record(record),
+            Err(e) => format_error(e),
+        }
+    }
+
+    #[tool(description = "Delete an opportunity/deal record from TwentyCRM by ID.")]
+    async fn delete_opportunity(&self, params: Parameters<DeleteParams>) -> String {
+        match self.client.delete("opportunities", &params.0.id).await {
+            Ok(()) => format!("Opportunity {} deleted.", params.0.id),
             Err(e) => format_error(e),
         }
     }
@@ -354,51 +421,184 @@ impl TwentyCrmMcpServer {
             Err(e) => format_error(e),
         }
     }
+
+    #[tool(description = "Delete a task from TwentyCRM by ID.")]
+    async fn delete_task(&self, params: Parameters<DeleteParams>) -> String {
+        match self.client.delete("tasks", &params.0.id).await {
+            Ok(()) => format!("Task {} deleted.", params.0.id),
+            Err(e) => format_error(e),
+        }
+    }
+
+    // ─── Notes ──────────────────────────────────────────────────────
+
+    #[tool(
+        description = "Search for notes in TwentyCRM. Use query to search by title, or filter for precise matching. Supports pagination."
+    )]
+    async fn search_notes(&self, params: Parameters<SearchParams>) -> String {
+        let p = params.0;
+        match self
+            .client
+            .search(
+                "notes",
+                p.query.as_deref(),
+                p.filter.as_deref(),
+                p.order_by.as_deref(),
+                p.limit,
+                p.starting_after.as_deref(),
+                p.fields.as_deref(),
+            )
+            .await
+        {
+            Ok(resp) => format_list_result("notes", resp),
+            Err(e) => format_error(e),
+        }
+    }
+
+    #[tool(description = "View full details of a specific note by ID.")]
+    async fn view_note(&self, params: Parameters<ViewParams>) -> String {
+        let p = params.0;
+        match self.client.get("notes", &p.id, p.fields.as_deref()).await {
+            Ok(record) => format_record(record),
+            Err(e) => format_error(e),
+        }
+    }
+
+    #[tool(
+        description = "Create a new note in TwentyCRM. Optionally link to a company, person, or opportunity via target IDs."
+    )]
+    async fn create_note(&self, params: Parameters<CreateNoteParams>) -> String {
+        let p = params.0;
+        let mut body = json!({});
+        if let Some(title) = &p.title {
+            body["title"] = json!(title);
+        }
+        if let Some(text) = &p.body {
+            body["bodyV2"] = json!({"markdown": text});
+        }
+
+        let record = match self.client.create("notes", body).await {
+            Ok(r) => r,
+            Err(e) => return format_error(e),
+        };
+
+        // Create noteTargets to link the note to entities
+        let note_id = record.get("id").and_then(|v| v.as_str()).unwrap_or("");
+        if !note_id.is_empty() {
+            for (field, value) in [
+                ("targetCompanyId", &p.target_company_id),
+                ("targetPersonId", &p.target_person_id),
+                ("targetOpportunityId", &p.target_opportunity_id),
+            ] {
+                if let Some(val) = value {
+                    let target_body = json!({ "noteId": note_id, field: val });
+                    if let Err(e) = self.client.create("noteTargets", target_body).await {
+                        tracing::warn!("Failed to create note target: {e}");
+                    }
+                }
+            }
+        }
+
+        format_record(record)
+    }
+
+    #[tool(description = "Update an existing note in TwentyCRM.")]
+    async fn update_note(&self, params: Parameters<UpdateNoteParams>) -> String {
+        let p = params.0;
+        let id = p.id.clone();
+        let mut body = json!({});
+        if let Some(title) = &p.title {
+            body["title"] = json!(title);
+        }
+        if let Some(text) = &p.body {
+            body["bodyV2"] = json!({"markdown": text});
+        }
+        match self.client.update("notes", &id, body).await {
+            Ok(record) => format_record(record),
+            Err(e) => format_error(e),
+        }
+    }
+
+    #[tool(description = "Delete a note from TwentyCRM by ID.")]
+    async fn delete_note(&self, params: Parameters<DeleteParams>) -> String {
+        match self.client.delete("notes", &params.0.id).await {
+            Ok(()) => format!("Note {} deleted.", params.0.id),
+            Err(e) => format_error(e),
+        }
+    }
+
+    // ─── Timeline ───────────────────────────────────────────────────
+
+    #[tool(
+        description = "Get the timeline of activities for an entity. Shows events like creation, updates, notes, tasks, and other changes. entity_type must be one of: company, contact, opportunity, task."
+    )]
+    async fn get_timeline(&self, params: Parameters<TimelineParams>) -> String {
+        let p = params.0;
+
+        let filter_field = match p.entity_type.as_str() {
+            "company" => "targetCompanyId",
+            "contact" | "person" => "targetPersonId",
+            "opportunity" => "targetOpportunityId",
+            "task" => "targetTaskId",
+            other => {
+                return format!(
+                    "Error: Unknown entity_type '{other}'. Must be one of: company, contact, opportunity, task."
+                );
+            }
+        };
+
+        let filter = format!("{filter_field}[eq]:{}", p.entity_id);
+        match self
+            .client
+            .search(
+                "timelineActivities",
+                None,
+                Some(&filter),
+                Some("happensAt[DescNullsLast]"),
+                p.limit,
+                p.starting_after.as_deref(),
+                None,
+            )
+            .await
+        {
+            Ok(resp) => format_list_result("timelineActivities", resp),
+            Err(e) => format_error(e),
+        }
+    }
+
+    // ─── Workspace Members ──────────────────────────────────────────
+
+    #[tool(
+        description = "List workspace members in TwentyCRM. Returns member IDs, names, and emails. Use this to look up member IDs for task assignment or ownership."
+    )]
+    async fn list_workspace_members(&self, params: Parameters<SearchParams>) -> String {
+        let p = params.0;
+        match self
+            .client
+            .search(
+                "workspaceMembers",
+                p.query.as_deref(),
+                p.filter.as_deref(),
+                p.order_by.as_deref(),
+                p.limit,
+                p.starting_after.as_deref(),
+                p.fields.as_deref(),
+            )
+            .await
+        {
+            Ok(resp) => format_list_result("workspaceMembers", resp),
+            Err(e) => format_error(e),
+        }
+    }
 }
 
 #[tool_handler]
 impl ServerHandler for TwentyCrmMcpServer {
     fn get_info(&self) -> ServerInfo {
-        let mut info = ServerInfo::default();
+        let mut info = ServerInfo::new(ServerCapabilities::builder().enable_tools().build());
         info.instructions = Some(
-            "TwentyCRM MCP Server. Search, view, create, and update companies, contacts, opportunities, and tasks in your TwentyCRM workspace.".into()
+            "TwentyCRM MCP Server. Search, view, create, update, and delete companies, contacts, opportunities, tasks, and notes. View entity timelines for activity history.".into()
         );
         info
-    }
-}
-
-// ─── Helpers ────────────────────────────────────────────────────────
-
-fn format_list_result(entity: &str, resp: crate::types::ListResponse) -> String {
-    let mut result = json!({ "entity": entity, "data": resp.data });
-    if let Some(pi) = resp.page_info {
-        result["pageInfo"] = json!({
-            "hasNextPage": pi.has_next_page,
-            "startCursor": pi.start_cursor,
-            "endCursor": pi.end_cursor,
-        });
-    }
-    serde_json::to_string_pretty(&result).unwrap_or_default()
-}
-
-fn format_record(record: serde_json::Value) -> String {
-    serde_json::to_string_pretty(&record).unwrap_or_default()
-}
-
-fn format_error(err: crate::error::AppError) -> String {
-    format!("Error: {}", err.client_message())
-}
-
-fn strip_nulls(value: serde_json::Value) -> serde_json::Value {
-    match value {
-        serde_json::Value::Object(map) => {
-            let filtered: serde_json::Map<String, serde_json::Value> = map
-                .into_iter()
-                .filter(|(_, v)| !v.is_null())
-                .map(|(k, v)| (k, strip_nulls(v)))
-                .collect();
-            serde_json::Value::Object(filtered)
-        }
-        other => other,
     }
 }

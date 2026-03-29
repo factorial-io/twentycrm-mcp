@@ -2,11 +2,10 @@ use axum::{
     body::Body,
     extract::State,
     http::{HeaderMap, Request},
-    response::Response,
+    response::{IntoResponse, Response},
     routing::{any, get, post},
     Router,
 };
-use http_body_util::BodyExt;
 use openidconnect::core::CoreClient;
 use rmcp::transport::streamable_http_server::{
     session::local::LocalSessionManager,
@@ -23,12 +22,12 @@ pub mod session;
 pub mod twentycrm;
 pub mod types;
 
-use crate::error::AppError;
 use crate::mcp::TwentyCrmMcpServer;
 use crate::twentycrm::TwentyCrmClient;
 
 pub struct AppState {
     pub base_url: String,
+    pub oidc_issuer_url: String,
     pub oidc_client: CoreClient,
     pub redis: redis::aio::MultiplexedConnection,
     pub encryption_key: [u8; 32],
@@ -67,6 +66,7 @@ impl AppState {
 
         Arc::new(Self {
             base_url: base_url.trim_end_matches('/').to_string(),
+            oidc_issuer_url: oidc_issuer_url.to_string(),
             oidc_client,
             redis,
             encryption_key,
@@ -120,14 +120,38 @@ async fn mcp_handler(
     State(state): State<Arc<AppState>>,
     headers: HeaderMap,
     request: Request<Body>,
-) -> Result<Response, AppError> {
+) -> Response {
+    let www_auth = format!(
+        r#"Bearer resource_metadata="{}/.well-known/oauth-protected-resource""#,
+        state.base_url
+    );
+
     // Extract bearer token
-    let token = extract_bearer_token(&headers)
-        .ok_or_else(|| AppError::Auth("Bearer token required".into()))?;
+    let token = match extract_bearer_token(&headers) {
+        Some(t) => t,
+        None => {
+            return (
+                http::StatusCode::UNAUTHORIZED,
+                [("WWW-Authenticate", www_auth)],
+                "Authorization required",
+            )
+                .into_response();
+        }
+    };
 
     // Look up session in Redis
     let mut redis = state.redis.clone();
-    let _session = session::get_session(&mut redis, &token, &state.encryption_key).await?;
+    match session::get_session(&mut redis, &token, &state.encryption_key).await {
+        Ok(_session) => {}
+        Err(_) => {
+            return (
+                http::StatusCode::UNAUTHORIZED,
+                [("WWW-Authenticate", www_auth)],
+                "Invalid or expired session",
+            )
+                .into_response();
+        }
+    }
 
     // Create per-request MCP server
     let mcp_server = TwentyCrmMcpServer::new(state.twentycrm_client.clone());
@@ -142,17 +166,8 @@ async fn mcp_handler(
         StreamableHttpService::new(move || Ok(mcp_server.clone()), session_manager, config);
 
     // Delegate to the MCP transport service
-    let response = service.handle(request).await;
-
-    // Convert BoxBody response to axum Body
-    let (parts, body) = response.into_parts();
-    let bytes = body
-        .collect()
-        .await
-        .map_err(|e| AppError::Internal(format!("Body collect error: {e}")))?
-        .to_bytes();
-    let axum_body = Body::from(bytes);
-    Ok(Response::from_parts(parts, axum_body))
+    let resp = service.handle(request).await;
+    resp.map(Body::new)
 }
 
 /// Extract bearer token from Authorization header.
