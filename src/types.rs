@@ -364,6 +364,51 @@ pub struct TimelineParams {
     pub starting_after: Option<String>,
 }
 
+// ─── Message Tool Parameters ───────────────────────────────────────
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct SearchMessagesParams {
+    /// Filter by participant person ID (contact linked to message).
+    #[serde(default, rename = "personId")]
+    pub person_id: Option<String>,
+    /// Free-text search on subject.
+    #[serde(default)]
+    pub subject: Option<String>,
+    /// Additional filter expression in TwentyCRM format.
+    #[serde(default)]
+    pub filter: Option<String>,
+    /// Maximum number of results (default: 20).
+    #[serde(default = "default_limit")]
+    pub limit: Option<i64>,
+    /// Cursor for the next page.
+    #[serde(default)]
+    pub starting_after: Option<String>,
+}
+
+// ─── Calendar Tool Parameters ──────────────────────────────────────
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct SearchCalendarEventsParams {
+    /// Filter by start date (ISO 8601, e.g. "2026-03-01T00:00:00Z"). Returns events starting on or after this date.
+    #[serde(default, rename = "startsAfter")]
+    pub starts_after: Option<String>,
+    /// Filter by end date (ISO 8601). Returns events starting before this date.
+    #[serde(default, rename = "startsBefore")]
+    pub starts_before: Option<String>,
+    /// Free-text search on title.
+    #[serde(default)]
+    pub title: Option<String>,
+    /// Additional filter expression in TwentyCRM format.
+    #[serde(default)]
+    pub filter: Option<String>,
+    /// Maximum number of results (default: 20).
+    #[serde(default = "default_limit")]
+    pub limit: Option<i64>,
+    /// Cursor for the next page.
+    #[serde(default)]
+    pub starting_after: Option<String>,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -47,6 +47,26 @@ pub fn format_record(record: serde_json::Value) -> String {
     serde_json::to_string_pretty(&unwrapped).unwrap_or_default()
 }
 
+/// Extract the record ID from a TwentyCRM create/get response.
+/// The response may be `{"data": {"note": {"id": "..."}}}` or flat `{"id": "..."}`.
+pub fn extract_id(record: &serde_json::Value) -> Option<&str> {
+    // Try nested: {"data": {"<entity>": {"id": "..."}}}
+    record
+        .get("data")
+        .and_then(|data| data.as_object())
+        .and_then(|obj| {
+            if obj.len() == 1 {
+                obj.values().next()
+            } else {
+                None
+            }
+        })
+        .and_then(|inner| inner.get("id"))
+        .and_then(|v| v.as_str())
+        // Fallback to flat: {"id": "..."}
+        .or_else(|| record.get("id").and_then(|v| v.as_str()))
+}
+
 pub fn format_error(err: crate::error::AppError) -> String {
     format!("Error: {}", err.client_message())
 }
