@@ -383,6 +383,7 @@ impl TwentyCrmMcpServer {
                 ("targetCompanyId", &p.target_company_id),
                 ("targetPersonId", &p.target_person_id),
                 ("targetOpportunityId", &p.target_opportunity_id),
+                ("targetCampaignId", &p.target_campaign_id),
             ] {
                 if let Some(val) = value {
                     let target_body = json!({ "taskId": task_id, field: val });
@@ -489,6 +490,7 @@ impl TwentyCrmMcpServer {
                 ("targetCompanyId", &p.target_company_id),
                 ("targetPersonId", &p.target_person_id),
                 ("targetOpportunityId", &p.target_opportunity_id),
+                ("targetCampaignId", &p.target_campaign_id),
             ] {
                 if let Some(val) = value {
                     let target_body = json!({ "noteId": note_id, field: val });
@@ -527,10 +529,109 @@ impl TwentyCrmMcpServer {
         }
     }
 
+    // ─── Campaigns ────────────────────────────────────────────────────
+
+    #[tool(
+        description = "Search for campaigns in TwentyCRM by name or other attributes. Supports filtering, pagination, and field selection."
+    )]
+    async fn search_campaigns(&self, params: Parameters<SearchParams>) -> String {
+        let p = params.0;
+        match self
+            .client
+            .search(
+                "campaigns",
+                p.query.as_deref(),
+                p.filter.as_deref(),
+                p.order_by.as_deref(),
+                p.limit,
+                p.starting_after.as_deref(),
+                p.fields.as_deref(),
+            )
+            .await
+        {
+            Ok(resp) => format_list_result("campaigns", resp),
+            Err(e) => format_error(e),
+        }
+    }
+
+    #[tool(
+        description = "View full details of a specific campaign by ID, including linked companies."
+    )]
+    async fn view_campaign(&self, params: Parameters<ViewParams>) -> String {
+        let p = params.0;
+        match self
+            .client
+            .get("campaigns", &p.id, p.fields.as_deref())
+            .await
+        {
+            Ok(record) => format_record(record),
+            Err(e) => format_error(e),
+        }
+    }
+
+    #[tool(description = "Create a new campaign in TwentyCRM.")]
+    async fn create_campaign(&self, params: Parameters<CreateCampaignParams>) -> String {
+        let body = serde_json::to_value(&params.0).unwrap_or_default();
+        match self.client.create("campaigns", strip_nulls(body)).await {
+            Ok(record) => format_record(record),
+            Err(e) => format_error(e),
+        }
+    }
+
+    #[tool(description = "Update an existing campaign in TwentyCRM.")]
+    async fn update_campaign(&self, params: Parameters<UpdateCampaignParams>) -> String {
+        let id = params.0.id.clone();
+        let mut body = serde_json::to_value(&params.0).unwrap_or_default();
+        if let Some(obj) = body.as_object_mut() {
+            obj.remove("id");
+        }
+        match self
+            .client
+            .update("campaigns", &id, strip_nulls(body))
+            .await
+        {
+            Ok(record) => format_record(record),
+            Err(e) => format_error(e),
+        }
+    }
+
+    #[tool(description = "Delete a campaign from TwentyCRM by ID.")]
+    async fn delete_campaign(&self, params: Parameters<DeleteParams>) -> String {
+        match self.client.delete("campaigns", &params.0.id).await {
+            Ok(()) => format!("Campaign {} deleted.", params.0.id),
+            Err(e) => format_error(e),
+        }
+    }
+
+    #[tool(
+        description = "Add a company to a campaign by setting the company's campaignId. This links the company to the campaign."
+    )]
+    async fn add_company_to_campaign(&self, params: Parameters<CampaignCompanyParams>) -> String {
+        let p = params.0;
+        let body = json!({ "campaignId": p.campaign_id });
+        match self.client.update("companies", &p.company_id, body).await {
+            Ok(record) => format_record(record),
+            Err(e) => format_error(e),
+        }
+    }
+
+    #[tool(description = "Remove a company from a campaign by clearing the company's campaignId.")]
+    async fn remove_company_from_campaign(
+        &self,
+        params: Parameters<CampaignCompanyParams>,
+    ) -> String {
+        let p = params.0;
+        let body = json!({ "campaignId": null });
+        match self.client.update("companies", &p.company_id, body).await {
+            Ok(record) => format_record(record),
+            Err(e) => format_error(e),
+        }
+    }
+
     // ─── Timeline ───────────────────────────────────────────────────
 
     #[tool(
-        description = "Get the timeline of activities for an entity. Shows events like creation, updates, notes, tasks, and other changes. entity_type must be one of: company, contact, opportunity, task."
+        description = "Get the timeline of activities for an entity. Shows events like creation, updates, notes, tasks, and other changes. entity_type must be one of: company, contact, opportunity, task, campaign."
     )]
     async fn get_timeline(&self, params: Parameters<TimelineParams>) -> String {
         let p = params.0;
@@ -540,9 +641,10 @@ impl TwentyCrmMcpServer {
             "contact" | "person" => "targetPersonId",
             "opportunity" => "targetOpportunityId",
             "task" => "targetTaskId",
+            "campaign" => "targetCampaignId",
             other => {
                 return format!(
-                    "Error: Unknown entity_type '{other}'. Must be one of: company, contact, opportunity, task."
+                    "Error: Unknown entity_type '{other}'. Must be one of: company, contact, opportunity, task, campaign."
                 );
             }
         };
@@ -800,7 +902,7 @@ impl ServerHandler for TwentyCrmMcpServer {
     fn get_info(&self) -> ServerInfo {
         let mut info = ServerInfo::new(ServerCapabilities::builder().enable_tools().build());
         info.instructions = Some(
-            "TwentyCRM MCP Server. Manage companies, contacts, opportunities, tasks, and notes. Search email messages and calendar events. View entity timelines for activity history.".into()
+            "TwentyCRM MCP Server. Manage companies, contacts, opportunities, tasks, notes, and campaigns. Add/remove companies to campaigns. Search email messages and calendar events. View entity timelines for activity history.".into()
         );
         info
     }
