@@ -298,6 +298,9 @@ pub struct CreateTaskParams {
     /// Link task to an opportunity.
     #[serde(default, rename = "targetOpportunityId")]
     pub target_opportunity_id: Option<String>,
+    /// Link task to a campaign.
+    #[serde(default, rename = "targetCampaignId")]
+    pub target_campaign_id: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
@@ -335,6 +338,9 @@ pub struct CreateNoteParams {
     /// Link note to an opportunity.
     #[serde(default, rename = "targetOpportunityId")]
     pub target_opportunity_id: Option<String>,
+    /// Link note to a campaign.
+    #[serde(default, rename = "targetCampaignId")]
+    pub target_campaign_id: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
@@ -346,6 +352,37 @@ pub struct UpdateNoteParams {
     /// Note body (markdown).
     #[serde(default)]
     pub body: Option<String>,
+}
+
+// ─── Campaign Tool Parameters ──────────────────────────────────────
+
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+pub struct CreateCampaignParams {
+    /// Campaign name.
+    pub name: String,
+    /// Position (display order).
+    #[serde(default)]
+    pub position: Option<f64>,
+}
+
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+pub struct UpdateCampaignParams {
+    /// The unique ID of the campaign to update.
+    pub id: String,
+    /// Campaign name.
+    #[serde(default)]
+    pub name: Option<String>,
+    /// Position (display order).
+    #[serde(default)]
+    pub position: Option<f64>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct CampaignCompanyParams {
+    /// The unique ID of the campaign.
+    pub campaign_id: String,
+    /// The unique ID of the company to add or remove.
+    pub company_id: String,
 }
 
 // ─── Timeline Tool Parameters ──────────────────────────────────────
