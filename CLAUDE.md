@@ -4,7 +4,7 @@ Auto-generated from all feature plans. Last updated: 2026-03-27
 
 ## Active Technologies
 
-- Rust (2021 edition) + axum 0.8.x + rmcp 1.2.0 + reqwest + redis + openidconnect (001-twentycrm-mcp-server)
+- Rust (2021 edition) + axum 0.8.x + rmcp 1.2.0 + reqwest + redis + openidconnect + grantry (001-twentycrm-mcp-server)
 
 ## Blueprint
 
@@ -16,8 +16,7 @@ This project follows the architecture of [factorial-io/imap-mcp](https://github.
 src/
 ├── main.rs          # Entrypoint, env config, server bootstrap
 ├── lib.rs           # AppState, build_router(), mcp_handler
-├── auth.rs          # OAuth/OIDC flow (from imap-mcp)
-├── session.rs       # Redis sessions, AES-256-GCM encryption (from imap-mcp)
+├── auth.rs          # grantry OAuth server + upstream OIDC login/group check
 ├── error.rs         # AppError enum (from imap-mcp)
 ├── mcp.rs           # MCP tool implementations
 ├── twentycrm.rs     # TwentyCRM REST API client

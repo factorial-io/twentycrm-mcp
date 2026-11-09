@@ -14,9 +14,6 @@ pub enum AppError {
     #[error("Authentication required")]
     Auth(String),
 
-    #[error("Session not found")]
-    SessionNotFound,
-
     #[error("TwentyCRM API error: {status} - {message}")]
     TwentyCrmApi { status: u16, message: String },
 
@@ -25,9 +22,6 @@ pub enum AppError {
 
     #[error("Validation error: {0}")]
     Validation(String),
-
-    #[error("Encryption error: {0}")]
-    Encryption(String),
 
     #[error("Internal error: {0}")]
     Internal(String),
@@ -44,13 +38,11 @@ impl AppError {
         match self {
             AppError::Redis(_) => StatusCode::INTERNAL_SERVER_ERROR,
             AppError::Auth(_) => StatusCode::UNAUTHORIZED,
-            AppError::SessionNotFound => StatusCode::UNAUTHORIZED,
             AppError::TwentyCrmApi { status, .. } => {
                 StatusCode::from_u16(*status).unwrap_or(StatusCode::BAD_GATEWAY)
             }
             AppError::NotFound(_) => StatusCode::NOT_FOUND,
             AppError::Validation(_) => StatusCode::BAD_REQUEST,
-            AppError::Encryption(_) => StatusCode::INTERNAL_SERVER_ERROR,
             AppError::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
             AppError::Oidc(_) => StatusCode::BAD_GATEWAY,
             AppError::Serialization(_) => StatusCode::INTERNAL_SERVER_ERROR,
@@ -62,11 +54,9 @@ impl AppError {
         match self {
             AppError::Redis(_) => "Internal error".to_string(),
             AppError::Auth(msg) => msg.clone(),
-            AppError::SessionNotFound => "Session expired or invalid".to_string(),
             AppError::TwentyCrmApi { message, .. } => message.clone(),
             AppError::NotFound(msg) => msg.clone(),
             AppError::Validation(msg) => msg.clone(),
-            AppError::Encryption(_) => "Internal error".to_string(),
             AppError::Internal(_) => "Internal error".to_string(),
             AppError::Oidc(_) => "Authentication provider error".to_string(),
             AppError::Serialization(_) => "Internal error".to_string(),
@@ -81,10 +71,7 @@ impl IntoResponse for AppError {
 
         // Log internal details server-side
         match &self {
-            AppError::Redis(_)
-            | AppError::Encryption(_)
-            | AppError::Internal(_)
-            | AppError::Serialization(_) => {
+            AppError::Redis(_) | AppError::Internal(_) | AppError::Serialization(_) => {
                 tracing::error!("{self}");
             }
             AppError::Oidc(_) | AppError::TwentyCrmApi { .. } => {
@@ -121,12 +108,6 @@ mod tests {
     }
 
     #[test]
-    fn test_session_not_found_is_401() {
-        let err = AppError::SessionNotFound;
-        assert_eq!(err.status_code(), StatusCode::UNAUTHORIZED);
-    }
-
-    #[test]
     fn test_not_found_is_404() {
         let err = AppError::NotFound("Company xyz not found".into());
         assert_eq!(err.status_code(), StatusCode::NOT_FOUND);
@@ -149,7 +130,7 @@ mod tests {
 
     #[test]
     fn test_internal_errors_hide_details() {
-        let err = AppError::Encryption("AES key invalid".into());
+        let err = AppError::Internal("Redis key prefix broken".into());
         assert_eq!(err.client_message(), "Internal error");
     }
 

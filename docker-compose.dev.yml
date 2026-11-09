@@ -9,7 +9,7 @@ services:
       - OIDC_CLIENT_ID=${OIDC_CLIENT_ID}
       - OIDC_CLIENT_SECRET=${OIDC_CLIENT_SECRET}
       - BASE_URL=${BASE_URL}
-      - ENCRYPTION_KEY=${ENCRYPTION_KEY}
+      - TOKEN_SIGNING_KEY=${TOKEN_SIGNING_KEY}
       - REDIS_URL=redis://redis:6379
       - BIND_ADDR=0.0.0.0:8080
       - RUST_LOG=debug

@@ -2,92 +2,166 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
+//! Authorization for MCP clients.
+//!
+//! grantry is the OAuth 2.1 authorization server MCP clients talk to
+//! (metadata, registration, authorize, token, refresh). Its consent step is
+//! the upstream OIDC login (GitLab) with the required-group check: once the
+//! user passes it, `callback` approves the pending authorization with the
+//! user's email as the grant subject.
+
 use axum::{
     extract::{Query, State},
     response::{IntoResponse, Redirect, Response},
-    Form, Json,
+    routing::get,
+    Json, Router,
 };
-use base64::Engine;
+use grantry::{
+    metadata::{AuthorizationServerMetadata, ProtectedResourceMetadata},
+    routes::Routes,
+    server::ApproveError,
+    store::NoEvents,
+    Algorithm, BackendError, Config, Grant, NoFetch, Recheck, ScopeSpec, Server, Signer, Subjects,
+};
+use grantry_redis::RedisStore;
 use openidconnect::{
     core::{CoreClient, CoreProviderMetadata, CoreResponseType},
     AuthenticationFlow, AuthorizationCode, ClientId, ClientSecret, CsrfToken, IssuerUrl, Nonce,
     OAuth2TokenResponse, PkceCodeChallenge, PkceCodeVerifier, RedirectUrl, Scope, TokenResponse,
 };
+use redis::aio::ConnectionManager;
 use serde::{Deserialize, Serialize};
-use serde_json::json;
-use sha2::{Digest, Sha256};
 use std::sync::Arc;
 use uuid::Uuid;
 
 use crate::error::AppError;
-use crate::session::{self, Session};
 use crate::AppState;
 
-// ─── Well-Known Endpoints ───────────────────────────────────────────
+/// The authorization server; the grant subject is the user's email.
+pub type OAuth = Server<String>;
 
-pub async fn oauth_protected_resource(State(state): State<Arc<AppState>>) -> impl IntoResponse {
-    Json(json!({
-        "resource": state.base_url,
-        "authorization_servers": [&state.base_url],
-        "bearer_methods_supported": ["header"],
-    }))
+pub const MCP_PATH: &str = "/mcp";
+const AUTHORIZE_PATH: &str = "/auth/authorize";
+const TOKEN_PATH: &str = "/auth/token";
+const REGISTER_PATH: &str = "/register";
+const PROTECTED_RESOURCE_PATH: &str = "/.well-known/oauth-protected-resource";
+
+/// Grants last 30 days; no refresh extends them.
+const GRANT_DAYS: i64 = 30;
+
+fn scopes() -> ScopeSpec {
+    // offline_access by default, so clients get refresh tokens without asking.
+    ScopeSpec::new(
+        &["mcp", "offline_access"],
+        &["mcp", "offline_access"],
+        "offline_access",
+    )
 }
 
-pub async fn oauth_authorization_server(State(state): State<Arc<AppState>>) -> impl IntoResponse {
-    Json(json!({
-        "issuer": &state.base_url,
-        "authorization_endpoint": format!("{}/auth/login", state.base_url),
-        "token_endpoint": format!("{}/auth/token", state.base_url),
-        "registration_endpoint": format!("{}/register", state.base_url),
-        "response_types_supported": ["code"],
-        "grant_types_supported": ["authorization_code"],
-        "code_challenge_methods_supported": ["S256"],
-        "token_endpoint_auth_methods_supported": ["none"],
-    }))
+/// The protected resource: the MCP endpoint URL clients connect to.
+pub fn resource(base_url: &str) -> String {
+    format!("{base_url}{MCP_PATH}")
 }
 
-// ─── Dynamic Client Registration ────────────────────────────────────
-
-#[derive(Debug, Deserialize)]
-pub struct RegisterRequest {
-    pub redirect_uris: Vec<String>,
-    pub client_name: Option<String>,
+/// URL of the protected resource metadata for the MCP endpoint (RFC 9728).
+pub fn protected_resource_metadata_url(base_url: &str) -> String {
+    format!("{base_url}{PROTECTED_RESOURCE_PATH}{MCP_PATH}")
 }
 
-pub async fn register(Json(body): Json<RegisterRequest>) -> Result<impl IntoResponse, AppError> {
-    if body.redirect_uris.is_empty() {
-        return Err(AppError::Validation(
-            "redirect_uris must not be empty".into(),
-        ));
+pub fn oauth_server(
+    base_url: &str,
+    signing_key: &str,
+    redis: ConnectionManager,
+) -> Result<OAuth, AppError> {
+    let signer = Signer::hmac_base64(Algorithm::HS256, signing_key)
+        .map_err(|e| AppError::Internal(format!("Invalid TOKEN_SIGNING_KEY: {e}")))?;
+    let config = Config {
+        grant_lifetime: chrono::Duration::days(GRANT_DAYS),
+        ..Config::new(resource(base_url), "mcp", scopes(), signer)
+    };
+    Ok(Server::new(
+        config,
+        Arc::new(RedisStore::with_prefix(redis, "grantry:")),
+        Arc::new(GroupMembers),
+        Arc::new(NoEvents),
+        // ponytail: no Client ID Metadata Documents (fetching client-given URLs
+        // needs an egress policy); clients use dynamic registration.
+        Arc::new(NoFetch),
+    ))
+}
+
+/// The OAuth endpoints: grantry's metadata, authorize, token and register,
+/// plus the protected resource metadata and the login callback.
+pub fn oauth_router(state: Arc<AppState>) -> Router {
+    let base = state.base_url.clone();
+    let mut metadata = AuthorizationServerMetadata::new(
+        &base,
+        AUTHORIZE_PATH,
+        TOKEN_PATH,
+        Some(REGISTER_PATH),
+        &scopes().known,
+    );
+    metadata.client_id_metadata_document_supported = false;
+
+    let consent_base = base.clone();
+    let routes = Routes {
+        metadata,
+        authorize_path: AUTHORIZE_PATH.into(),
+        token_path: TOKEN_PATH.into(),
+        register_path: Some(REGISTER_PATH.into()),
+        consent_url: Arc::new(move |id| format!("{consent_base}/auth/login?pending={id}")),
+        other_grant: None,
+    };
+
+    let protected = Router::new()
+        .route(PROTECTED_RESOURCE_PATH, get(protected_resource))
+        .route(
+            &format!("{PROTECTED_RESOURCE_PATH}{MCP_PATH}"),
+            get(protected_resource),
+        )
+        .route("/auth/login", get(login))
+        .route("/auth/callback", get(callback))
+        .with_state(state.clone());
+
+    grantry::routes::router(state.oauth.clone(), routes).merge(protected)
+}
+
+async fn protected_resource(State(state): State<Arc<AppState>>) -> impl IntoResponse {
+    Json(ProtectedResourceMetadata::new(
+        &resource(&state.base_url),
+        &state.base_url,
+        &scopes().known,
+        Some("TwentyCRM"),
+    ))
+}
+
+/// Re-checked on every token issue and refresh.
+struct GroupMembers;
+
+#[async_trait::async_trait]
+impl Subjects<String> for GroupMembers {
+    async fn recheck(&self, grant: &Grant<String>) -> Result<Recheck, BackendError> {
+        // ponytail: group membership is checked at login only, so a user
+        // removed from the group keeps access until the grant expires
+        // (GRANT_DAYS). Store the GitLab refresh token and re-query groups
+        // here if that window matters.
+        let mut claims = serde_json::Map::new();
+        claims.insert("sub".into(), grant.subject.clone().into());
+        Ok(Recheck::Allow(claims))
     }
-
-    // Validate all redirect URIs use HTTPS
-    for uri in &body.redirect_uris {
-        if !uri.starts_with("https://") && !uri.starts_with("http://localhost") {
-            return Err(AppError::Validation(format!(
-                "redirect_uri must use HTTPS: {uri}"
-            )));
-        }
-    }
-
-    let client_id = Uuid::new_v4().to_string();
-
-    Ok(Json(json!({
-        "client_id": client_id,
-        "client_name": body.client_name.unwrap_or_else(|| "MCP Client".into()),
-        "redirect_uris": body.redirect_uris,
-    })))
 }
 
-// ─── Login (OIDC Authorization Initiation) ──────────────────────────
+// ─── Login (consent step: upstream OIDC) ────────────────────────────
 
 #[derive(Debug, Deserialize)]
 pub struct LoginQuery {
-    pub redirect_uri: String,
-    pub state: Option<String>,
-    pub code_challenge: Option<String>,
-    pub code_challenge_method: Option<String>,
-    pub client_id: Option<String>,
+    pub pending: Uuid,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct AuthStateData {
+    pending: Uuid,
+    pkce_verifier: String,
 }
 
 pub async fn login(
@@ -96,17 +170,11 @@ pub async fn login(
 ) -> Result<Response, AppError> {
     let (pkce_challenge, pkce_verifier) = PkceCodeChallenge::new_random_sha256();
 
-    // Store auth state in Redis for callback
     let auth_state_id = Uuid::new_v4().to_string();
     let auth_state = AuthStateData {
-        redirect_uri: params.redirect_uri.clone(),
-        client_state: params.state.clone(),
-        code_challenge: params.code_challenge.clone(),
-        code_challenge_method: params.code_challenge_method.clone(),
+        pending: params.pending,
         pkce_verifier: pkce_verifier.secret().to_string(),
-        client_id: params.client_id.clone(),
     };
-
     let auth_state_json = serde_json::to_string(&auth_state)
         .map_err(|e| AppError::Internal(format!("Failed to serialize auth state: {e}")))?;
 
@@ -115,17 +183,14 @@ pub async fn login(
         &mut redis,
         format!("auth_state:{auth_state_id}"),
         &auth_state_json,
-        300, // 5 minute TTL
+        600, // as long as grantry keeps the pending authorization
     )
     .await?;
 
-    // Build OIDC authorization URL
-    let callback_url = format!("{}/auth/callback", state.base_url);
-    let redirect_url = RedirectUrl::new(callback_url)
-        .map_err(|e| AppError::Internal(format!("Invalid callback URL: {e}")))?;
-
-    let client = state.oidc_client.clone().set_redirect_uri(redirect_url);
-
+    let client = state
+        .oidc_client
+        .clone()
+        .set_redirect_uri(callback_url(&state)?);
     let (auth_url, _csrf, _nonce) = client
         .authorize_url(
             AuthenticationFlow::<CoreResponseType>::AuthorizationCode,
@@ -141,17 +206,12 @@ pub async fn login(
     Ok(Redirect::temporary(auth_url.as_str()).into_response())
 }
 
-#[derive(Debug, Serialize, Deserialize)]
-struct AuthStateData {
-    redirect_uri: String,
-    client_state: Option<String>,
-    code_challenge: Option<String>,
-    code_challenge_method: Option<String>,
-    pkce_verifier: String,
-    client_id: Option<String>,
+fn callback_url(state: &AppState) -> Result<RedirectUrl, AppError> {
+    RedirectUrl::new(format!("{}/auth/callback", state.base_url))
+        .map_err(|e| AppError::Internal(format!("Invalid callback URL: {e}")))
 }
 
-// ─── Callback (OIDC Response Handler) ───────────────────────────────
+// ─── Callback (OIDC response, then approve) ─────────────────────────
 
 #[derive(Debug, Deserialize)]
 pub struct CallbackQuery {
@@ -163,29 +223,21 @@ pub async fn callback(
     State(state): State<Arc<AppState>>,
     Query(params): Query<CallbackQuery>,
 ) -> Result<Response, AppError> {
-    // Retrieve and delete auth state
+    // Retrieve and delete auth state (single-use)
     let mut redis = state.redis.clone();
-    let auth_state_json: Option<String> =
-        redis::AsyncCommands::get(&mut redis, format!("auth_state:{}", params.state)).await?;
-
+    let key = format!("auth_state:{}", params.state);
+    let auth_state_json: Option<String> = redis::AsyncCommands::get_del(&mut redis, &key).await?;
     let auth_state_json = auth_state_json.ok_or(AppError::Auth(
         "Authorization state expired or invalid".into(),
     ))?;
-
-    // Delete the auth state (single-use)
-    let _: () =
-        redis::AsyncCommands::del(&mut redis, format!("auth_state:{}", params.state)).await?;
-
     let auth_state: AuthStateData = serde_json::from_str(&auth_state_json)
         .map_err(|e| AppError::Internal(format!("Failed to parse auth state: {e}")))?;
 
     // Exchange code for tokens with OIDC provider
-    let callback_url = format!("{}/auth/callback", state.base_url);
-    let redirect_url = RedirectUrl::new(callback_url)
-        .map_err(|e| AppError::Internal(format!("Invalid callback URL: {e}")))?;
-
-    let client = state.oidc_client.clone().set_redirect_uri(redirect_url);
-
+    let client = state
+        .oidc_client
+        .clone()
+        .set_redirect_uri(callback_url(&state)?);
     let token_response = client
         .exchange_code(AuthorizationCode::new(params.code))
         .set_pkce_verifier(PkceCodeVerifier::new(auth_state.pkce_verifier))
@@ -193,7 +245,6 @@ pub async fn callback(
         .await
         .map_err(|e| AppError::Oidc(format!("Token exchange failed: {e}")))?;
 
-    // Extract email from ID token claims
     let id_token = token_response
         .id_token()
         .ok_or(AppError::Oidc("No ID token in response".into()))?;
@@ -203,11 +254,11 @@ pub async fn callback(
         .claims(&state.oidc_client.id_token_verifier(), nonce_verifier)
         .map_err(|e| AppError::Oidc(format!("ID token verification failed: {e}")))?;
 
+    // The email is the grant subject, so it must be present.
     let email = claims
         .email()
-        .map(|e| e.to_string())
-        .unwrap_or_else(|| "unknown".to_string())
-        .to_lowercase();
+        .map(|e| e.to_string().to_lowercase())
+        .ok_or(AppError::Oidc("No email claim in ID token".into()))?;
 
     // Fetch user groups from the OIDC userinfo endpoint using the access token.
     // GitLab includes a "groups" claim in the userinfo response but not in the ID token.
@@ -217,15 +268,12 @@ pub async fn callback(
         state.oidc_issuer_url.trim_end_matches('/')
     );
 
-    let http_client = reqwest::Client::new();
-    let userinfo_response = http_client
+    let userinfo_json: serde_json::Value = reqwest::Client::new()
         .get(&userinfo_url)
         .bearer_auth(access_token)
         .send()
         .await
-        .map_err(|e| AppError::Oidc(format!("Userinfo request failed: {e}")))?;
-
-    let userinfo_json: serde_json::Value = userinfo_response
+        .map_err(|e| AppError::Oidc(format!("Userinfo request failed: {e}")))?
         .json()
         .await
         .map_err(|e| AppError::Oidc(format!("Userinfo parse failed: {e}")))?;
@@ -243,7 +291,7 @@ pub async fn callback(
         })
         .unwrap_or_default();
 
-    // Check group membership: user must be in at least one of the required groups
+    // User must be in at least one of the required groups
     let has_required_group = state
         .required_groups
         .iter()
@@ -262,106 +310,19 @@ pub async fn callback(
 
     tracing::info!("Authenticated user: {email} (groups: {:?})", user_groups);
 
-    // Create authorization code for the MCP client
-    let auth_code = Uuid::new_v4().to_string();
-    let auth_code_data = json!({
-        "email": email,
-        "code_challenge": auth_state.code_challenge,
-        "code_challenge_method": auth_state.code_challenge_method,
-        "client_id": auth_state.client_id,
-    });
-
-    redis::AsyncCommands::set_ex::<_, _, ()>(
-        &mut redis,
-        format!("auth_code:{auth_code}"),
-        serde_json::to_string(&auth_code_data)
-            .map_err(|e| AppError::Internal(format!("Serialization error: {e}")))?,
-        300, // 5 minute TTL
-    )
-    .await?;
-
-    // Redirect back to the MCP client with the authorization code
-    let mut redirect = auth_state.redirect_uri;
-    redirect.push_str(&format!("?code={auth_code}"));
-    if let Some(client_state) = auth_state.client_state {
-        redirect.push_str(&format!("&state={client_state}"));
-    }
-
-    Ok(Redirect::temporary(&redirect).into_response())
-}
-
-// ─── Token Exchange ─────────────────────────────────────────────────
-
-#[derive(Debug, Deserialize)]
-pub struct TokenRequest {
-    pub grant_type: String,
-    pub code: String,
-    pub code_verifier: Option<String>,
-    pub client_id: Option<String>,
-    pub redirect_uri: Option<String>,
-}
-
-pub async fn token(
-    State(state): State<Arc<AppState>>,
-    Form(body): Form<TokenRequest>,
-) -> Result<impl IntoResponse, AppError> {
-    if body.grant_type != "authorization_code" {
-        return Err(AppError::Validation(
-            "Unsupported grant_type. Must be authorization_code.".into(),
-        ));
-    }
-
-    // Retrieve and delete auth code (single-use)
-    let mut redis = state.redis.clone();
-    let code_data_json: Option<String> =
-        redis::AsyncCommands::get(&mut redis, format!("auth_code:{}", body.code)).await?;
-
-    let code_data_json = code_data_json.ok_or(AppError::Auth(
-        "Authorization code expired or invalid".into(),
-    ))?;
-
-    let _: () = redis::AsyncCommands::del(&mut redis, format!("auth_code:{}", body.code)).await?;
-
-    let code_data: serde_json::Value = serde_json::from_str(&code_data_json)
-        .map_err(|e| AppError::Internal(format!("Failed to parse auth code data: {e}")))?;
-
-    let email = code_data["email"]
-        .as_str()
-        .ok_or(AppError::Internal("Missing email in auth code".into()))?
-        .to_string();
-
-    // Verify PKCE code_verifier if code_challenge was provided
-    if let Some(expected_challenge) = code_data["code_challenge"].as_str() {
-        let verifier = body
-            .code_verifier
-            .as_deref()
-            .ok_or(AppError::Auth("code_verifier required for PKCE".into()))?;
-
-        let method = code_data["code_challenge_method"]
-            .as_str()
-            .unwrap_or("S256");
-
-        if method == "S256" {
-            let mut hasher = Sha256::new();
-            hasher.update(verifier.as_bytes());
-            let computed = base64::prelude::BASE64_URL_SAFE_NO_PAD.encode(hasher.finalize());
-
-            if computed != expected_challenge {
-                return Err(AppError::Auth("PKCE verification failed".into()));
+    let approved = state
+        .oauth
+        .approve(auth_state.pending, &email, None)
+        .await
+        .map_err(|e| match e {
+            ApproveError::NotFound => {
+                AppError::Auth("Authorization request expired or invalid".into())
             }
-        }
-    }
+            ApproveError::InvalidScope => AppError::Validation("Invalid scope".into()),
+            ApproveError::Backend(e) => AppError::Internal(format!("OAuth store error: {e}")),
+        })?;
 
-    // Create bearer token and session
-    let bearer_token = Uuid::new_v4().to_string();
-    let sess = Session { email };
-
-    session::create_session(&mut redis, &bearer_token, &sess, &state.encryption_key).await?;
-
-    Ok(Json(json!({
-        "access_token": bearer_token,
-        "token_type": "bearer",
-    })))
+    Ok(Redirect::temporary(&approved.redirect).into_response())
 }
 
 /// Initialize the OIDC client from the issuer URL.
@@ -378,11 +339,9 @@ pub async fn init_oidc_client(
             .await
             .map_err(|e| AppError::Oidc(format!("OIDC discovery failed: {e}")))?;
 
-    let client = CoreClient::from_provider_metadata(
+    Ok(CoreClient::from_provider_metadata(
         metadata,
         ClientId::new(client_id.to_string()),
         Some(ClientSecret::new(client_secret.to_string())),
-    );
-
-    Ok(client)
+    ))
 }
