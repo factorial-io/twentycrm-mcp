@@ -7,9 +7,10 @@ use axum::{
     extract::State,
     http::{HeaderMap, Request},
     response::{IntoResponse, Response},
-    routing::{any, get, post},
+    routing::any,
     Router,
 };
+use grantry::{metadata::ProtectedResourceMetadata, ActiveError};
 use openidconnect::core::CoreClient;
 use rmcp::transport::streamable_http_server::{
     session::local::LocalSessionManager,
@@ -22,7 +23,6 @@ use tower_http::trace::TraceLayer;
 pub mod auth;
 pub mod error;
 pub mod mcp;
-pub mod session;
 pub mod twentycrm;
 pub mod types;
 
@@ -33,8 +33,8 @@ pub struct AppState {
     pub base_url: String,
     pub oidc_issuer_url: String,
     pub oidc_client: CoreClient,
-    pub redis: redis::aio::MultiplexedConnection,
-    pub encryption_key: [u8; 32],
+    pub redis: redis::aio::ConnectionManager,
+    pub oauth: auth::OAuth,
     pub twentycrm_client: TwentyCrmClient,
     pub required_groups: Vec<String>,
 }
@@ -47,7 +47,7 @@ impl AppState {
         oidc_client_id: &str,
         oidc_client_secret: &str,
         redis_url: &str,
-        encryption_key: &str,
+        token_signing_key: &str,
         twentycrm_api_token: &str,
         twentycrm_api_url: &str,
         required_groups: Vec<String>,
@@ -59,21 +59,22 @@ impl AppState {
 
         let redis_client = redis::Client::open(redis_url).expect("Invalid Redis URL");
         let redis = redis_client
-            .get_multiplexed_async_connection()
+            .get_connection_manager()
             .await
             .expect("Failed to connect to Redis");
 
-        let encryption_key =
-            session::decode_encryption_key(encryption_key).expect("Invalid encryption key");
+        let base_url = base_url.trim_end_matches('/');
+        let oauth = auth::oauth_server(base_url, token_signing_key, redis.clone())
+            .expect("Failed to initialize OAuth server");
 
         let twentycrm_client = TwentyCrmClient::new(twentycrm_api_url, twentycrm_api_token);
 
         Arc::new(Self {
-            base_url: base_url.trim_end_matches('/').to_string(),
+            base_url: base_url.to_string(),
             oidc_issuer_url: oidc_issuer_url.to_string(),
             oidc_client,
             redis,
-            encryption_key,
+            oauth,
             twentycrm_client,
             required_groups,
         })
@@ -96,27 +97,13 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         ]);
 
     Router::new()
-        // Well-known OAuth endpoints
-        .route(
-            "/.well-known/oauth-protected-resource",
-            get(auth::oauth_protected_resource),
-        )
-        .route(
-            "/.well-known/oauth-authorization-server",
-            get(auth::oauth_authorization_server),
-        )
-        // Dynamic client registration
-        .route("/register", post(auth::register))
-        // OAuth flow
-        .route("/auth/login", get(auth::login))
-        .route("/auth/callback", get(auth::callback))
-        .route("/auth/token", post(auth::token))
         // MCP endpoint (all methods)
-        .route("/mcp", any(mcp_handler))
+        .route(auth::MCP_PATH, any(mcp_handler))
         .route("/mcp/{*path}", any(mcp_handler))
+        .with_state(state.clone())
+        .merge(auth::oauth_router(state))
         .layer(TraceLayer::new_for_http())
         .layer(cors)
-        .with_state(state)
 }
 
 /// MCP handler that authenticates the bearer token and creates a per-request MCP server.
@@ -125,33 +112,26 @@ async fn mcp_handler(
     headers: HeaderMap,
     request: Request<Body>,
 ) -> Response {
-    let www_auth = format!(
-        r#"Bearer resource_metadata="{}/.well-known/oauth-protected-resource""#,
-        state.base_url
-    );
-
-    // Extract bearer token
-    let token = match extract_bearer_token(&headers) {
-        Some(t) => t,
-        None => {
-            return (
-                http::StatusCode::UNAUTHORIZED,
-                [("WWW-Authenticate", www_auth)],
-                "Authorization required",
-            )
-                .into_response();
-        }
+    let token = extract_bearer_token(&headers);
+    let verified = match &token {
+        Some(t) => state.oauth.verify_active(t).await,
+        None => Err(ActiveError::Inactive),
     };
-
-    // Look up session in Redis
-    let mut redis = state.redis.clone();
-    match session::get_session(&mut redis, &token, &state.encryption_key).await {
-        Ok(_session) => {}
+    match verified {
+        Ok(_) => {}
+        Err(ActiveError::Backend(e)) => {
+            tracing::error!("OAuth store error while verifying token: {e}");
+            return http::StatusCode::INTERNAL_SERVER_ERROR.into_response();
+        }
         Err(_) => {
+            let challenge = ProtectedResourceMetadata::challenge(
+                &auth::protected_resource_metadata_url(&state.base_url),
+                token.is_some(),
+            );
             return (
                 http::StatusCode::UNAUTHORIZED,
-                [("WWW-Authenticate", www_auth)],
-                "Invalid or expired session",
+                [("WWW-Authenticate", challenge)],
+                "Authorization required",
             )
                 .into_response();
         }

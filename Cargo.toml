@@ -16,17 +16,17 @@ tokio-util = "0.7"
 # MCP protocol
 rmcp = { version = "1.2.0", features = ["server", "transport-streamable-http-server"] }
 
-# OAuth/OIDC
+# OAuth/OIDC: GitLab login upstream, grantry as the MCP clients' authorization server
 openidconnect = "3.5"
+grantry = { version = "0.5", features = ["axum"] }
+grantry-redis = "0.1"
+async-trait = "0.1"
 
 # HTTP client for TwentyCRM API
 reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false }
 
-# Session storage
-redis = { version = "1.0", features = ["tokio-comp", "aio"] }
-
-# Encryption
-aes-gcm = "0.10"
+# OAuth state storage
+redis = { version = "1.0", features = ["tokio-comp", "aio", "connection-manager"] }
 
 # Serialization
 serde = { version = "1", features = ["derive"] }
@@ -42,9 +42,7 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 # Crypto / Auth
-sha2 = "0.10"
 secrecy = { version = "0.10", features = ["serde"] }
-base64 = "0.22"
 
 # Utilities
 uuid = { version = "1", features = ["v4"] }
@@ -52,7 +50,6 @@ chrono = { version = "0.4", features = ["serde"] }
 http = "1"
 futures = "0.3"
 url = "2"
-rand = "0.10.0"
 http-body-util = "0.1"
 
 [dev-dependencies]
