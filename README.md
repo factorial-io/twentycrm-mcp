@@ -2,7 +2,7 @@
 
 MCP server for [TwentyCRM](https://twenty.com/) that exposes CRM operations as tools via the [Model Context Protocol](https://modelcontextprotocol.io/). Built with Rust, axum, and [rmcp](https://github.com/anthropics/rmcp).
 
-Access is controlled via OIDC group membership (e.g. GitLab groups). The server uses a shared TwentyCRM API token for all API requests.
+Access is controlled via OIDC group membership (e.g. GitLab groups). MCP clients authenticate with OAuth 2.1 against the server itself ([grantry](https://github.com/factorial-io/grantry)): dynamic client registration, PKCE, rotating refresh tokens; the login step is your OIDC provider. The server uses a shared TwentyCRM API token for all API requests.
 
 ## Prerequisites
 
@@ -23,7 +23,7 @@ Access is controlled via OIDC group membership (e.g. GitLab groups). The server 
 | `OIDC_CLIENT_SECRET` | Yes | OIDC client secret |
 | `BASE_URL` | Yes | Public URL of the service |
 | `REDIS_URL` | Yes | Redis connection URL |
-| `ENCRYPTION_KEY` | Yes | 32-byte AES-256 key, base64-encoded |
+| `TOKEN_SIGNING_KEY` | Yes | Base64-encoded secret (32+ bytes) that signs access tokens, e.g. `openssl rand -base64 32` |
 | `BIND_ADDR` | No | Listen address (default: `0.0.0.0:8080`) |
 | `RUST_LOG` | No | Log level filter (default: `info`) |
 
@@ -87,7 +87,7 @@ docker run -d \
   -e OIDC_CLIENT_SECRET=... \
   -e BASE_URL=https://your-domain.example.com \
   -e REDIS_URL=redis://your-redis:6379 \
-  -e ENCRYPTION_KEY=... \
+  -e TOKEN_SIGNING_KEY=... \
   ghcr.io/factorial-io/twentycrm-mcp:latest
 ```
 
@@ -97,7 +97,7 @@ Or use a `.env` file:
 docker run -d --name twentycrm-mcp -p 8080:8080 --env-file .env ghcr.io/factorial-io/twentycrm-mcp:latest
 ```
 
-The server requires a Redis instance for session storage. In production, place the server behind a reverse proxy with TLS — the `BASE_URL` must match the public HTTPS URL that clients use.
+The server requires a Redis instance for OAuth state (clients, grants, refresh tokens). In production, place the server behind a reverse proxy with TLS — the `BASE_URL` must match the public HTTPS URL that clients use.
 
 ## Local Development (Cargo)
 
@@ -127,7 +127,7 @@ cargo run
 ## Connecting from claude.ai
 
 1. Go to claude.ai Settings > Integrations
-2. Add a new MCP server with your `BASE_URL`
+2. Add a new MCP server with the URL `<BASE_URL>/mcp`. Clients must use exactly this URL: it is the OAuth resource the access tokens are issued for
 3. Authenticate via your OIDC provider when prompted
 4. The CRM tools will appear in the tool list
 

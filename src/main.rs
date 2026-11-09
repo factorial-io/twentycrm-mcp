@@ -27,7 +27,7 @@ async fn main() {
     let oidc_client_id = env_var("OIDC_CLIENT_ID");
     let oidc_client_secret = env_var("OIDC_CLIENT_SECRET");
     let redis_url = env_var("REDIS_URL");
-    let encryption_key = env_var("ENCRYPTION_KEY");
+    let token_signing_key = env_var("TOKEN_SIGNING_KEY");
     let twentycrm_api_token = env_var("TWENTYCRM_API_TOKEN");
     let twentycrm_api_url = env_var_or("TWENTYCRM_API_URL", "https://api.twenty.com/rest");
     let required_groups: Vec<String> = env_var("REQUIRED_GROUPS")
@@ -45,7 +45,7 @@ async fn main() {
         &oidc_client_id,
         &oidc_client_secret,
         &redis_url,
-        &encryption_key,
+        &token_signing_key,
         &twentycrm_api_token,
         &twentycrm_api_url,
         required_groups,
