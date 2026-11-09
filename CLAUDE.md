@@ -50,6 +50,6 @@ cargo fmt            # Format
 
 ## TwentyCRM API Reference
 
-The OpenAPI specs are in `docs/`:
+The OpenAPI specs live in `docs/` but are git-ignored; fetch them from a Twenty instance (see README):
 - `docs/core.json` — Core entity endpoints (companies, people, notes, tasks, opportunities, timelineActivities, noteTargets, etc.)
 - `docs/metadata.json` — Metadata/schema endpoints

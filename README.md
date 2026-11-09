@@ -146,3 +146,23 @@ cargo build          # Build
 cargo clippy         # Lint
 cargo fmt            # Format
 ```
+
+## TwentyCRM API Specs
+
+The OpenAPI specs are not part of this repository. Fetch them from your own
+Twenty instance into `docs/` (git-ignored) when you need them:
+
+```bash
+mkdir -p docs
+curl -fsSL -H "Authorization: Bearer $TWENTY_API_KEY" "$TWENTY_URL/rest/open-api/core" -o docs/core.json
+curl -fsSL -H "Authorization: Bearer $TWENTY_API_KEY" "$TWENTY_URL/rest/open-api/metadata" -o docs/metadata.json
+```
+
+## License
+
+This project is licensed under the [Mozilla Public License 2.0](LICENSE).
+
+The Docker image ships the licenses of all bundled third-party crates at
+`/usr/share/doc/twentycrm-mcp/THIRD_PARTY_LICENSES.html`, generated with
+[cargo-about](https://github.com/EmbarkStudios/cargo-about). Allowed
+dependency licenses are listed in `about.toml`.

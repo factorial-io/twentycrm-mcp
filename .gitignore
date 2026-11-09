@@ -26,3 +26,6 @@ Thumbs.db
 
 # Logs
 *.log
+
+# TwentyCRM OpenAPI specs (fetch locally, see README)
+docs/*.json
